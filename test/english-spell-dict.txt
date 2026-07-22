@@ -4,6 +4,7 @@
 1000 docker
 1000 iphone
 1000 kubernetes
+1000 patch
 1000 persistent
 900 persisting
 1000 python

@@ -67,7 +67,12 @@ Set:
 
 ```ini
 EnglishTranslationEnabled=True
+EnglishTranslationMaxMeanings=3
 ```
+
+`EnglishTranslationMaxMeanings` accepts 1 through 3. It is a maximum: words
+with fewer useful groups stay short, while polysemous words can expose up to
+three complete ordered groups.
 
 Then install a UTF-8 tab-separated file at:
 
@@ -78,23 +83,29 @@ Then install a UTF-8 tab-separated file at:
 Format:
 
 ```text
-# english<TAB>part-of-speech<TAB>concise Chinese meaning
+# english<TAB>label<TAB>concise Chinese meanings
 user	n.	用户
-persistent	adj.	持久的
+patch	计.	补丁/修补
+patch	n.	片/补缀
+patch	v.	补缀/掩饰
 ```
 
 The meaning is a non-committed candidate comment, not a separate candidate:
 
 ```text
-1. user        (n. 用户)
-2. persistent  (adj. 持久的)
+user        (n. 用户)
+persistent  (adj. 持久的)
+patch       (计. 补丁/修补；n. 片/补缀；v. 补缀/掩饰)
 ```
 
-Selecting these candidates commits only `user` or `persistent`. The lookup is
-case-insensitive, the first duplicate is kept, and legacy two-column dictionary
-lines are accepted without a part of speech. The file is loaded only while
-meanings are enabled; restart Fcitx5 after an external updater replaces it.
+Selecting these candidates commits only the English word. The lookup is
+case-insensitive. Repeated rows for one word are collected in file order;
+identical rows are ignored, and legacy two-column lines are accepted without a
+label. The file is loaded only while meanings are enabled; restart Fcitx5 after
+an external updater replaces it.
 
-Translation data is deliberately not bundled in this source repository. It may
-be generated from an independently licensed local source such as ECDICT.
-Generated data should be kept out of Git.
+Translation data is deliberately not bundled in this source repository. The
+maintained local generator combines ECDICT's labelled and general senses with
+strict, explicitly domain-labelled CC-CEDICT reverse matches. Generated data
+must be kept out of Git and retain the source licenses; the combined local
+dictionary is CC BY-SA 4.0.
