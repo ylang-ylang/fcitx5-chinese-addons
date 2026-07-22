@@ -6,7 +6,6 @@
 #include "englishtranslation.h"
 #include <algorithm>
 #include <cctype>
-#include <format>
 #include <string>
 #include <string_view>
 
@@ -28,14 +27,31 @@ std::string trim(std::string_view value) {
 
 } // namespace
 
-std::string EnglishTranslationEntry::comment() const {
+std::string EnglishTranslationMeaning::text() const {
     if (translation.empty()) {
         return {};
     }
-    if (partOfSpeech.empty()) {
-        return std::format("({})", translation);
+    if (label.empty()) {
+        return translation;
     }
-    return std::format("({} {})", partOfSpeech, translation);
+    return label + " " + translation;
+}
+
+std::string EnglishTranslationEntry::comment(size_t maximumMeanings) const {
+    if (meanings.empty() || maximumMeanings == 0) {
+        return {};
+    }
+
+    std::string result = "(";
+    const auto count = std::min(maximumMeanings, meanings.size());
+    for (size_t index = 0; index < count; index++) {
+        if (index != 0) {
+            result += "；";
+        }
+        result += meanings[index].text();
+    }
+    result += ")";
+    return result;
 }
 
 std::string EnglishTranslationDictionary::normalize(std::string_view word) {
@@ -73,12 +89,12 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
         auto value = lineView.substr(firstSeparator + 1);
         const auto secondSeparator = value.find('\t');
 
-        std::string partOfSpeech;
+        std::string label;
         std::string translation;
         if (secondSeparator == std::string_view::npos) {
             translation = trim(value);
         } else {
-            partOfSpeech = trim(value.substr(0, secondSeparator));
+            label = trim(value.substr(0, secondSeparator));
             translation = trim(value.substr(secondSeparator + 1));
         }
         if (word.empty() || translation.empty()) {
@@ -89,12 +105,16 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
         if (normalized.empty()) {
             continue;
         }
-        // Keep the first definition in case an updater accidentally emits a
-        // duplicate. This makes output deterministic across updates.
-        translations_.try_emplace(
-            std::move(normalized),
-            EnglishTranslationEntry{std::move(partOfSpeech),
-                                    std::move(translation)});
+        auto &entry = translations_[std::move(normalized)];
+        const auto duplicate =
+            std::ranges::any_of(entry.meanings, [&](const auto &meaning) {
+                return meaning.label == label &&
+                       meaning.translation == translation;
+            });
+        if (!duplicate) {
+            entry.meanings.push_back(EnglishTranslationMeaning{
+                std::move(label), std::move(translation)});
+        }
     }
     return static_cast<bool>(input) || input.eof();
 }
