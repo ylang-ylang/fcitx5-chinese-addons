@@ -196,6 +196,9 @@ FCITX_CONFIGURATION(
     Option<bool> englishTranslationEnabled{this, "EnglishTranslationEnabled",
                                            _("Show concise English meanings"),
                                            false};
+    Option<int, IntConstrain> englishTranslationMaxMeanings{
+        this, "EnglishTranslationMaxMeanings",
+        _("Maximum English meaning groups"), 3, IntConstrain(1, 3)};
     Option<bool> symbolsEnabled{this, "SymbolsEnabled",
                                 _("Show symbol candidates"), true};
     Option<bool> chaiziEnabled{this, "ChaiziEnabled",
@@ -511,7 +514,8 @@ private:
             return {};
         }
         const auto *entry = englishTranslations_.lookup(word);
-        return entry ? entry->comment() : std::string();
+        return entry ? entry->comment(*config_.englishTranslationMaxMeanings)
+                     : std::string();
     }
 
     void populateConfig();

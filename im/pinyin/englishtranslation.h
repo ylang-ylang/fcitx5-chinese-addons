@@ -11,14 +11,21 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace fcitx {
 
-struct EnglishTranslationEntry {
-    std::string partOfSpeech;
+struct EnglishTranslationMeaning {
+    std::string label;
     std::string translation;
 
-    std::string comment() const;
+    std::string text() const;
+};
+
+struct EnglishTranslationEntry {
+    std::vector<EnglishTranslationMeaning> meanings;
+
+    std::string comment(size_t maximumMeanings) const;
 };
 
 /**
@@ -27,11 +34,13 @@ struct EnglishTranslationEntry {
  * The file format is deliberately plain text so that applications can update
  * the data independently from the pinyin addon:
  *
- *     english<TAB>part-of-speech<TAB>preferred Chinese definition
+ *     english<TAB>label<TAB>concise Chinese meaning
  *
- * Legacy two-column lines are accepted without a part of speech. Empty lines
- * and lines beginning with '#' are ignored. The dictionary is intentionally
- * word-only; sentence translation is outside the scope of the candidate list.
+ * A word may occur on up to several consecutive lines, ordered from the most
+ * useful meaning to the least useful one. Legacy two-column lines are accepted
+ * without a label. Empty lines and lines beginning with '#' are ignored. The
+ * dictionary is intentionally word-only; sentence translation is outside the
+ * scope of the candidate list.
  */
 class EnglishTranslationDictionary {
 public:

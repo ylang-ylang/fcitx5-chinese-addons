@@ -305,6 +305,7 @@ void testEnglishFuzzyTranslation(Instance *instance) {
         config.setValueByPath("AdaptiveEnglishEnabled", "True");
         config.setValueByPath("AdaptiveEnglishThreshold", "2");
         config.setValueByPath("EnglishTranslationEnabled", "True");
+        config.setValueByPath("EnglishTranslationMaxMeanings", "3");
         pinyin->setConfig(config);
 
         // The minimum length also gates promotion of native lowercase hints.
@@ -349,6 +350,40 @@ void testEnglishFuzzyTranslation(Instance *instance) {
                          .comment()
                          .toString() == "(n. 用户)");
         ic->reset();
+
+        // Meaning comments contain one to three complete, ordered groups.
+        type("patch");
+        FCITX_ASSERT(firstCandidate() == "patch");
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() ==
+                     "(计. 补丁/修补；n. 片/补缀；v. 补缀/掩饰)");
+        ic->reset();
+        config.setValueByPath("EnglishTranslationMaxMeanings", "1");
+        pinyin->setConfig(config);
+        type("patch");
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(计. 补丁/修补)");
+        ic->reset();
+        config.setValueByPath("EnglishTranslationMaxMeanings", "2");
+        pinyin->setConfig(config);
+        type("patch");
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(计. 补丁/修补；n. 片/补缀)");
+        ic->reset();
+        config.setValueByPath("EnglishTranslationMaxMeanings", "3");
+        pinyin->setConfig(config);
 
         // Enabling fuzzy English must not displace complete Xiaohe codes.
         type("hcde");
