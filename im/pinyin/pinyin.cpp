@@ -578,30 +578,6 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
         std::unordered_map<std::string,
                            std::unique_ptr<PinyinAbstractCandidateWord>>
             customCandidateMap;
-        size_t englishTranslationCount = 0;
-        auto addEnglishTranslation = [&](std::string_view source,
-                                         size_t inputLength,
-                                         CandidateOrder sourceOrder) {
-            if (!*config_.englishTranslationEnabled ||
-                englishTranslationCount >=
-                    static_cast<size_t>(
-                        *config_.englishTranslationCandidateLimit)) {
-                return;
-            }
-            auto translation = englishTranslation(source);
-            if (translation.empty() || translation == source ||
-                customCandidateMap.contains(translation) ||
-                context.candidatesToCursorSet().contains(translation)) {
-                return;
-            }
-            customCandidateMap.emplace(
-                translation, std::make_unique<EnglishTranslationCandidateWord>(
-                                 this, std::string(source),
-                                 std::move(translation), inputLength,
-                                 CandidateOrder{sourceOrder.first,
-                                                customCandidateMap.size()}));
-            englishTranslationCount++;
-        };
 
         /// Create custom phrase candidate {{{
         do {
@@ -627,8 +603,8 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
                 customCandidateMap.emplace(
                     phrase, std::make_unique<CustomPhraseCandidateWord>(
                                 this, pyBeforeCursor.size(), order, phrase,
-                                std::move(customPhrase)));
-                addEnglishTranslation(phrase, pyBeforeCursor.size(), order);
+                                std::move(customPhrase),
+                                englishTranslationComment(phrase)));
             }
         } while (false);
         /// }}}
@@ -667,14 +643,20 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
             selectedLength <= context.cursor()) {
             auto [hasUpper, engNess] =
                 englishNess(parsedPy, context.useShuangpin());
-            const bool canUseFuzzyEnglish =
-                *config_.fuzzyEnglishEnabled && fullResult && !hasUpper &&
+            const bool eligibleEnglishInput =
+                fullResult && !hasUpper &&
                 !customCandidateMap.contains(pyBeforeCursor) &&
-                isAsciiEnglishWord(pyBeforeCursor) &&
+                isAsciiEnglishWord(pyBeforeCursor);
+            const bool adaptiveEnglish =
+                eligibleEnglishInput &&
+                learnedEnglishPreference(pyBeforeCursor);
+            const bool canUseFuzzyEnglish =
+                eligibleEnglishInput && *config_.fuzzyEnglishEnabled &&
                 pyBeforeCursor.size() >=
                     static_cast<size_t>(*config_.fuzzyEnglishMinLength);
-            const bool requestFuzzyEnglish = canUseFuzzyEnglish && !engNess;
-            if (engNess || requestFuzzyEnglish) {
+            const bool useEnglishPolicy = canUseFuzzyEnglish || adaptiveEnglish;
+            const bool requestEnglish = useEnglishPolicy && !engNess;
+            if (engNess || requestEnglish) {
                 parsedPyCursor -= selectedSentence.length();
                 parsedPy = parsedPy.substr(
                     selectedSentence.size(),
@@ -682,21 +664,21 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
                         ? parsedPyCursor - selectedSentence.length()
                         : std::string::npos);
                 const auto candidateLimit =
-                    canUseFuzzyEnglish ? static_cast<size_t>(
-                                             *config_.fuzzyEnglishMaxCandidates)
-                                       : static_cast<size_t>(engNess);
+                    useEnglishPolicy ? static_cast<size_t>(
+                                           *config_.fuzzyEnglishMaxCandidates)
+                                     : static_cast<size_t>(engNess);
                 // Fetch a few extra hints so confidence is not inferred from a
                 // result list truncated to one configured candidate.
                 const auto spellLimit =
-                    canUseFuzzyEnglish ? std::max<size_t>(candidateLimit + 1, 5)
-                                       : candidateLimit;
+                    useEnglishPolicy ? std::max<size_t>(candidateLimit + 1, 5)
+                                     : candidateLimit;
                 auto results = spell()->call<ISpell::hintWithProvider>(
                     "en", SpellProvider::Custom, pyBeforeCursor, spellLimit);
 
-                if (canUseFuzzyEnglish) {
+                const auto normalizedInput = lowercaseAscii(pyBeforeCursor);
+                if (useEnglishPolicy) {
                     const size_t maxDistance =
                         pyBeforeCursor.size() >= 8 ? 2 : 1;
-                    const auto normalizedInput = lowercaseAscii(pyBeforeCursor);
                     std::erase_if(results, [&](const auto &result) {
                         return boundedEditDistance(normalizedInput,
                                                    lowercaseAscii(result),
@@ -717,31 +699,43 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
                     }
                 }
 
-                int position = hasUpper ? 0 : 1;
+                const bool hasExactEnglish =
+                    std::ranges::any_of(results, [&](const auto &result) {
+                        return lowercaseAscii(result) == normalizedInput;
+                    });
                 const auto shuangpinProfile = ime_->shuangpinProfile();
                 const bool completeShuangpinCode =
                     context.useShuangpin() && shuangpinProfile &&
                     isCompleteShuangpinCode(pyBeforeCursor, *shuangpinProfile);
-                if (canUseFuzzyEnglish && *config_.fuzzyEnglishPromote &&
+                const bool adaptivePromotion =
+                    adaptiveEnglish && hasExactEnglish;
+                const bool fuzzyPromotion =
+                    canUseFuzzyEnglish && *config_.fuzzyEnglishPromote &&
                     !completeShuangpinCode &&
-                    hasUniqueNearEnglish(pyBeforeCursor, results)) {
-                    position = 0;
-                }
-                if (canUseFuzzyEnglish && results.size() > candidateLimit) {
+                    hasUniqueNearEnglish(pyBeforeCursor, results);
+                int position =
+                    hasUpper || adaptivePromotion || fuzzyPromotion ? 0 : 1;
+                if (useEnglishPolicy && results.size() > candidateLimit) {
                     results.resize(candidateLimit);
                 }
+                bool firstSpellResult = true;
                 for (const auto &result : results) {
                     if (customCandidateMap.contains(result)) {
                         continue;
                     }
+                    const bool forceFirst =
+                        (adaptivePromotion &&
+                         lowercaseAscii(result) == normalizedInput) ||
+                        ((hasUpper || fuzzyPromotion) && firstSpellResult);
                     const auto order =
                         CandidateOrder{static_cast<size_t>(position++),
                                        customCandidateMap.size()};
                     customCandidateMap.emplace(
                         result,
                         std::make_unique<SpellCandidateWord>(
-                            this, result, pyBeforeCursor.size(), order));
-                    addEnglishTranslation(result, pyBeforeCursor.size(), order);
+                            this, result, pyBeforeCursor.size(), order,
+                            englishTranslationComment(result), forceFirst));
+                    firstSpellResult = false;
                 }
             }
         }
@@ -777,6 +771,9 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
         /// }}}
 
         const auto candidateCompare = [](const auto &lhs, const auto &rhs) {
+            if (lhs->forceFirst() != rhs->forceFirst()) {
+                return lhs->forceFirst();
+            }
             return lhs->sortOrder() < rhs->sortOrder();
         };
 
@@ -980,6 +977,7 @@ PinyinEngine::PinyinEngine(Instance *instance)
     reloadConfig();
     loadExtraDict();
     loadCustomPhrase();
+    loadEnglishPreferences();
     instance_->inputContextManager().registerProperty("pinyinState", &factory_);
     KeySym syms[] = {
         FcitxKey_1, FcitxKey_2, FcitxKey_3, FcitxKey_4, FcitxKey_5,
@@ -1202,6 +1200,83 @@ void PinyinEngine::loadEnglishTranslations() {
         englishTranslations_.clear();
         PINYIN_ERROR() << "Failed to load English translation dictionary: "
                        << e.what();
+    }
+}
+
+void PinyinEngine::loadEnglishPreferences() {
+    englishPreferences_.clear();
+    const auto &standardPath = StandardPaths::global();
+    auto file = standardPath.open(StandardPathsType::PkgData,
+                                  "pinyin/english-preference.history",
+                                  StandardPathsMode::User);
+    if (!file.isValid()) {
+        return;
+    }
+    try {
+        IFDStreamBuf buffer(file.fd());
+        std::istream in(&buffer);
+        if (!englishPreferences_.load(in)) {
+            PINYIN_ERROR() << "Failed to read English preference history.";
+            englishPreferences_.clear();
+        }
+    } catch (const std::exception &e) {
+        englishPreferences_.clear();
+        PINYIN_ERROR() << "Failed to load English preference history: "
+                       << e.what();
+    }
+}
+
+void PinyinEngine::saveEnglishPreferences() {
+    if (deferredEnglishPreferenceSave_) {
+        return;
+    }
+    deferredEnglishPreferenceSave_ =
+        instance_->eventLoop().addDeferEvent([this](EventSource *) {
+            deferredEnglishPreferenceSave_.reset();
+            StandardPaths::global().safeSave(
+                StandardPathsType::PkgData, "pinyin/english-preference.history",
+                [this](int fd) {
+                    OFDStreamBuf buffer(fd);
+                    std::ostream output(&buffer);
+                    return englishPreferences_.save(output);
+                });
+            return true;
+        });
+}
+
+bool PinyinEngine::learnedEnglishPreference(std::string_view input) const {
+    return *config_.adaptiveEnglishEnabled &&
+           englishPreferences_.promoted(input,
+                                        *config_.adaptiveEnglishThreshold);
+}
+
+void PinyinEngine::rewardEnglishPreference(InputContext *inputContext) {
+    if (!*config_.adaptiveEnglishEnabled) {
+        return;
+    }
+    auto *state = inputContext->propertyFor(&factory_);
+    const auto &context = state->context_;
+    if (context.selectedLength() != 0 ||
+        !isAsciiEnglishWord(context.userInput())) {
+        return;
+    }
+    if (englishPreferences_.reward(context.userInput())) {
+        saveEnglishPreferences();
+    }
+}
+
+void PinyinEngine::penalizeEnglishPreference(InputContext *inputContext,
+                                             size_t selectLength) {
+    if (!*config_.adaptiveEnglishEnabled) {
+        return;
+    }
+    auto *state = inputContext->propertyFor(&factory_);
+    const auto &context = state->context_;
+    if (context.selectedLength() != 0 || selectLength < context.size()) {
+        return;
+    }
+    if (englishPreferences_.penalize(context.userInput())) {
+        saveEnglishPreferences();
     }
 }
 
@@ -2416,6 +2491,7 @@ void PinyinEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &event) {
             state->context_.clear();
             event.filterAndAccept();
         } else if (event.key().checkKeyList(*config_.commitRawInput)) {
+            rewardEnglishPreference(inputContext);
             inputContext->commitString(preeditCommitString(inputContext));
             state->context_.clear();
             state->context_.clearContextWords();
@@ -2541,6 +2617,16 @@ void PinyinEngine::doReset(InputContext *inputContext) const {
 void PinyinEngine::save() {
     safeSaveAsIni(config_, "conf/pinyin.conf");
     const auto &standardPath = StandardPaths::global();
+    deferredEnglishPreferenceSave_.reset();
+    if (*config_.adaptiveEnglishEnabled || !englishPreferences_.empty()) {
+        standardPath.safeSave(StandardPathsType::PkgData,
+                              "pinyin/english-preference.history",
+                              [this](int fd) {
+                                  OFDStreamBuf buffer(fd);
+                                  std::ostream output(&buffer);
+                                  return englishPreferences_.save(output);
+                              });
+    }
     standardPath.safeSave(
         StandardPathsType::PkgData, "pinyin/user.dict", [this](int fd) {
             OFDStreamBuf buffer(fd);

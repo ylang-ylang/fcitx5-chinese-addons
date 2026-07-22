@@ -8,6 +8,7 @@
 #define _PINYIN_PINYIN_H_
 
 #include "customphrase.h"
+#include "englishpreference.h"
 #include "englishtranslation.h"
 #include "symboldictionary.h"
 #include "workerthread.h"
@@ -178,7 +179,7 @@ FCITX_CONFIGURATION(
                                      _("Enable fuzzy English candidates"),
                                      false};
     Option<int, IntConstrain> fuzzyEnglishMinLength{
-        this, "FuzzyEnglishMinLength", _("Minimum fuzzy English length"), 5,
+        this, "FuzzyEnglishMinLength", _("Minimum fuzzy English length"), 4,
         IntConstrain(4, 32)};
     Option<int, IntConstrain> fuzzyEnglishMaxCandidates{
         this, "FuzzyEnglishMaxCandidates",
@@ -186,15 +187,15 @@ FCITX_CONFIGURATION(
     Option<bool> fuzzyEnglishPromote{this, "FuzzyEnglishPromote",
                                      _("Promote confident fuzzy English"),
                                      false};
+    Option<bool> adaptiveEnglishEnabled{this, "AdaptiveEnglishEnabled",
+                                        _("Learn explicit English commits"),
+                                        false};
+    Option<int, IntConstrain> adaptiveEnglishThreshold{
+        this, "AdaptiveEnglishThreshold", _("English promotion threshold"), 3,
+        IntConstrain(2, 10)};
     Option<bool> englishTranslationEnabled{this, "EnglishTranslationEnabled",
-                                           _("Show English translations"),
+                                           _("Show concise English meanings"),
                                            false};
-    Option<int, IntConstrain> englishTranslationCandidateLimit{
-        this, "EnglishTranslationCandidateLimit",
-        _("Number of English translations"), 1, IntConstrain(1, 3)};
-    Option<bool> englishTranslationShowSource{
-        this, "EnglishTranslationShowSource",
-        _("Show the English source in translation comments"), true};
     Option<bool> symbolsEnabled{this, "SymbolsEnabled",
                                 _("Show symbol candidates"), true};
     Option<bool> chaiziEnabled{this, "ChaiziEnabled",
@@ -475,6 +476,10 @@ public:
     void deleteCustomPhrase(InputContext *inputContext,
                             const std::string &customPhrase);
 
+    void rewardEnglishPreference(InputContext *inputContext);
+    void penalizeEnglishPreference(InputContext *inputContext,
+                                   size_t selectLength);
+
     FCITX_ADDON_DEPENDENCY_LOADER(cloudpinyin, instance_->addonManager());
 
     const auto &selectionKeys() const { return selectionKeys_; }
@@ -501,12 +506,19 @@ private:
     std::string evaluateCustomPhrase(InputContext *inputContext,
                                      std::string_view key);
 
-    std::string englishTranslation(std::string_view word) const {
-        return englishTranslations_.lookup(word);
+    std::string englishTranslationComment(std::string_view word) const {
+        if (!*config_.englishTranslationEnabled) {
+            return {};
+        }
+        const auto *entry = englishTranslations_.lookup(word);
+        return entry ? entry->comment() : std::string();
     }
 
     void populateConfig();
     void loadEnglishTranslations();
+    void loadEnglishPreferences();
+    void saveEnglishPreferences();
+    bool learnedEnglishPreference(std::string_view input) const;
 
     void updateForgetCandidate(InputContext *inputContext);
 
@@ -543,8 +555,10 @@ private:
     libime::PinyinPrediction prediction_;
     std::unique_ptr<EventSource> deferEvent_;
     std::unique_ptr<EventSource> deferredPreload_;
+    std::unique_ptr<EventSource> deferredEnglishPreferenceSave_;
     std::unique_ptr<HandlerTableEntry<EventHandler>> event_;
     CustomPhraseDict customPhrase_;
+    EnglishPreferenceHistory englishPreferences_;
     EnglishTranslationDictionary englishTranslations_;
     SymbolDict symbols_;
     WorkerThread worker_;

@@ -14,17 +14,24 @@
 
 namespace fcitx {
 
+struct EnglishTranslationEntry {
+    std::string partOfSpeech;
+    std::string translation;
+
+    std::string comment() const;
+};
+
 /**
  * A small, optional, local English-to-Chinese word dictionary.
  *
  * The file format is deliberately plain text so that applications can update
  * the data independently from the pinyin addon:
  *
- *     english<TAB>preferred Chinese definition
+ *     english<TAB>part-of-speech<TAB>preferred Chinese definition
  *
- * Empty lines and lines beginning with '#' are ignored.  The dictionary is
- * intentionally word-only; sentence translation is outside the scope of the
- * pinyin candidate list.
+ * Legacy two-column lines are accepted without a part of speech. Empty lines
+ * and lines beginning with '#' are ignored. The dictionary is intentionally
+ * word-only; sentence translation is outside the scope of the candidate list.
  */
 class EnglishTranslationDictionary {
 public:
@@ -34,12 +41,12 @@ public:
     bool empty() const { return translations_.empty(); }
     size_t size() const { return translations_.size(); }
 
-    std::string lookup(std::string_view word) const;
+    const EnglishTranslationEntry *lookup(std::string_view word) const;
 
     static std::string normalize(std::string_view word);
 
 private:
-    std::unordered_map<std::string, std::string> translations_;
+    std::unordered_map<std::string, EnglishTranslationEntry> translations_;
 };
 
 } // namespace fcitx
