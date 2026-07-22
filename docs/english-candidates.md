@@ -1,48 +1,75 @@
-# English candidates and local translations
+# English candidates and concise local meanings
 
 This downstream branch adds optional English behavior to the native Pinyin
-engine. The upstream behavior remains unchanged when the new options are
-`False` or when the optional translation file is absent.
+engine. Upstream candidate behavior remains unchanged when the new options are
+`False`.
 
 ## Fuzzy English
 
 ```ini
 FuzzyEnglishEnabled=True
-FuzzyEnglishMinLength=5
+FuzzyEnglishMinLength=4
 FuzzyEnglishMaxCandidates=3
-FuzzyEnglishPromote=False
+FuzzyEnglishPromote=True
 ```
 
-The native spell addon is still used. When a lowercase ASCII composition is
-long enough to look like a possible English word but the normal Pinyin
-`englishNess()` gate would not request spell hints, the addon asks the native
-spell dictionary for a bounded set of nearby words. Only close edit-distance
-matches are retained (with adjacent transpositions treated as one edit), and
-`FuzzyEnglishMaxCandidates` caps the number shown. The engine may inspect a few
-additional hints internally so a one-candidate
-limit is not mistaken for a unique correction. Fuzzy candidates remain after
-the normal Pinyin candidate by default. `FuzzyEnglishPromote=True` promotes a
-uniquely close match; it is intentionally opt-in because alphabetic Xiaohe
-codes are ambiguous.
+The native spell addon is still used. The addon requests a bounded set of
+nearby words for eligible lowercase ASCII compositions. Only close
+optimal-string-alignment matches are retained, so an adjacent transposition
+such as `pythno -> python` counts as one edit. The engine may inspect a few
+additional hints internally so a one-candidate display limit is not mistaken
+for a unique correction.
 
-`FuzzyEnglishMinLength` gates both lookup and promotion. Short words therefore
-remain under the native behavior. In Shuangpin mode, a composition made entirely
-of valid two-key syllables is never auto-promoted; its English correction can
-still be shown after Chinese candidates. Common complete Xiaohe inputs such as
-`hcde`, `doge`, and `detese` are therefore not displaced by arbitrary English
-suggestions.
+In Shuangpin mode, a composition made entirely of valid two-key syllables is
+not promoted by a static rule. Its English candidate can still be shown after
+Chinese candidates. Common complete Xiaohe inputs such as `hcde`, `doge`, and
+`detese` are therefore not displaced by arbitrary English suggestions.
 
-## Translation candidates
+## Adaptive English preference
+
+```ini
+AdaptiveEnglishEnabled=True
+AdaptiveEnglishThreshold=3
+```
+
+Committing a complete ASCII composition literally with the configured raw-input
+key (normally Enter) records one explicit English preference. Selecting its
+English spell candidate also records a preference. Once the threshold is
+reached, an exact dictionary word is promoted even if the input is also a valid
+Shuangpin code. For example, repeated literal commits can change:
+
+```text
+1. 错的
+2. code  (n. 代码)
+```
+
+into:
+
+```text
+1. code  (n. 代码)
+2. 错的
+```
+
+Selecting a full Chinese candidate removes one preference point, so the choice
+can adapt in both directions. Scores are bounded and stored separately from
+LibIME data at:
+
+```text
+~/.local/share/fcitx5/pinyin/english-preference.history
+```
+
+The history is a small text file capped at 4096 entries. It never modifies
+`user.dict` or `user.history`.
+
+## Concise English meanings
 
 Set:
 
 ```ini
 EnglishTranslationEnabled=True
-EnglishTranslationCandidateLimit=1
-EnglishTranslationShowSource=True
 ```
 
-Then install a UTF-8 tab-separated file at the normal Fcitx5 user data path:
+Then install a UTF-8 tab-separated file at:
 
 ```text
 ~/.local/share/fcitx5/pinyin/english-translation.dict
@@ -51,29 +78,23 @@ Then install a UTF-8 tab-separated file at the normal Fcitx5 user data path:
 Format:
 
 ```text
-# lowercase-or-mixed-English-word<TAB>preferred Chinese definition
-persistent	持久的；持续存在的
-kubernetes	容器编排平台
+# english<TAB>part-of-speech<TAB>concise Chinese meaning
+user	n.	用户
+persistent	adj.	持久的
 ```
 
-The lookup is case-insensitive. The first definition for a duplicate word is
-kept. The file is optional and is loaded only while translations are enabled;
-a config reload reloads it. Restart Fcitx5 after an external updater replaces
-the file.
-
-For an English candidate, the addon can add an immediately adjacent candidate
-whose committed text is only the Chinese definition. Its comment identifies the
-source word, for example:
+The meaning is a non-committed candidate comment, not a separate candidate:
 
 ```text
-1. persistent
-2. 持久的；持续存在的    ← persistent 的中文释义
+1. user        (n. 用户)
+2. persistent  (adj. 持久的)
 ```
 
-Selecting the second candidate commits only the Chinese text and resets the
-Pinyin context. It does not add a bogus Pinyin word to LibIME's learning
-history.
+Selecting these candidates commits only `user` or `persistent`. The lookup is
+case-insensitive, the first duplicate is kept, and legacy two-column dictionary
+lines are accepted without a part of speech. The file is loaded only while
+meanings are enabled; restart Fcitx5 after an external updater replaces it.
 
-The translation data is deliberately not bundled in this source repository.
-It may be generated from an independently licensed local English–Chinese
-source such as ECDICT. Generated data should be kept out of Git.
+Translation data is deliberately not bundled in this source repository. It may
+be generated from an independently licensed local source such as ECDICT.
+Generated data should be kept out of Git.

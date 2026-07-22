@@ -71,12 +71,14 @@ using CandidateOrder = std::pair<size_t, size_t>;
 class PinyinAbstractCandidateWord : virtual public CandidateWord {
 public:
     explicit PinyinAbstractCandidateWord(size_t selectLength,
-                                         CandidateOrder order);
+                                         CandidateOrder order,
+                                         bool forceFirst = false);
 
     virtual ~PinyinAbstractCandidateWord();
 
     size_t order() const { return order_.first; };
     CandidateOrder sortOrder() const { return order_; };
+    bool forceFirst() const { return forceFirst_; }
     size_t selectLength() const { return selectLength_; }
     virtual bool isPinyinCandidate() const { return false; }
     virtual bool isCustomPhrase() const { return false; }
@@ -84,6 +86,7 @@ public:
 protected:
     const size_t selectLength_;
     const CandidateOrder order_;
+    const bool forceFirst_;
 };
 
 class StrokeCandidateWord : public PinyinAbstractCandidateWord {
@@ -104,7 +107,8 @@ class CustomPhraseCandidateWord : public PinyinAbstractCandidateWord,
 public:
     CustomPhraseCandidateWord(PinyinEngine *engine, size_t selectLength,
                               CandidateOrder order, std::string value,
-                              std::string customPhraseString);
+                              std::string customPhraseString,
+                              std::string comment = {});
 
     void select(InputContext *inputContext) const override;
 
@@ -183,7 +187,8 @@ class SpellCandidateWord : public PinyinAbstractCandidateWord,
                            public InsertableAsCustomPhraseInterface {
 public:
     SpellCandidateWord(PinyinEngine *engine, std::string word,
-                       size_t inputLength, CandidateOrder order);
+                       size_t inputLength, CandidateOrder order,
+                       std::string comment = {}, bool forceFirst = false);
 
     void select(InputContext *inputContext) const override;
 
@@ -192,24 +197,6 @@ public:
 private:
     PinyinEngine *engine_;
     std::string word_;
-};
-
-/**
- * A translation candidate is deliberately not a custom phrase.  Selecting it
- * commits the translation directly and resets the pinyin context, so choosing
- * a definition cannot create a bogus pinyin learning record.
- */
-class EnglishTranslationCandidateWord : public PinyinAbstractCandidateWord {
-public:
-    EnglishTranslationCandidateWord(PinyinEngine *engine, std::string source,
-                                    std::string translation, size_t inputLength,
-                                    CandidateOrder order);
-
-    void select(InputContext *inputContext) const override;
-
-private:
-    PinyinEngine *engine_;
-    std::string translation_;
 };
 
 class PinyinCandidateWord : public PinyinAbstractCandidateWord,

@@ -179,8 +179,10 @@ InsertableAsCustomPhraseInterface::~InsertableAsCustomPhraseInterface() =
 PinyinCandidateIndexInterface::~PinyinCandidateIndexInterface() = default;
 
 PinyinAbstractCandidateWord::PinyinAbstractCandidateWord(size_t selectLength,
-                                                         CandidateOrder order)
-    : selectLength_(selectLength), order_(std::move(order)) {}
+                                                         CandidateOrder order,
+                                                         bool forceFirst)
+    : selectLength_(selectLength), order_(std::move(order)),
+      forceFirst_(forceFirst) {}
 
 PinyinAbstractCandidateWord::~PinyinAbstractCandidateWord() = default;
 
@@ -203,10 +205,13 @@ void StrokeCandidateWord::select(InputContext *inputContext) const {
 
 CustomPhraseCandidateWord::CustomPhraseCandidateWord(
     PinyinEngine *engine, size_t selectLength, CandidateOrder order,
-    std::string value, std::string customPhraseString)
+    std::string value, std::string customPhraseString, std::string comment)
     : PinyinAbstractCandidateWord(selectLength, order), engine_(engine),
       customPhraseString_(std::move(customPhraseString)) {
     setText(Text(std::move(value)));
+    if (!comment.empty()) {
+        setComment(Text(std::move(comment)));
+    }
 }
 
 void CustomPhraseCandidateWord::select(InputContext *inputContext) const {
@@ -284,33 +289,22 @@ void SymbolCandidateWord::select(InputContext *inputContext) const {
 }
 
 SpellCandidateWord::SpellCandidateWord(PinyinEngine *engine, std::string word,
-                                       size_t inputLength, CandidateOrder order)
-    : PinyinAbstractCandidateWord(inputLength, order), engine_(engine),
-      word_(std::move(word)) {
+                                       size_t inputLength, CandidateOrder order,
+                                       std::string comment, bool forceFirst)
+    : PinyinAbstractCandidateWord(inputLength, order, forceFirst),
+      engine_(engine), word_(std::move(word)) {
     setText(Text(word_));
+    if (!comment.empty()) {
+        setComment(Text(std::move(comment)));
+    }
 }
 
 void SpellCandidateWord::select(InputContext *inputContext) const {
+    engine_->rewardEnglishPreference(inputContext);
     auto *state = inputContext->propertyFor(&engine_->factory());
     auto &context = state->context_;
     context.selectCustom(selectLength_, word_);
     engine_->updateUI(inputContext);
-}
-
-EnglishTranslationCandidateWord::EnglishTranslationCandidateWord(
-    PinyinEngine *engine, std::string source, std::string translation,
-    size_t inputLength, CandidateOrder order)
-    : PinyinAbstractCandidateWord(inputLength, order), engine_(engine),
-      translation_(std::move(translation)) {
-    setText(Text(translation_));
-    if (*engine_->config().englishTranslationShowSource) {
-        setComment(Text(std::format("← {} 的中文释义", source)));
-    }
-}
-
-void EnglishTranslationCandidateWord::select(InputContext *inputContext) const {
-    inputContext->commitString(translation_);
-    engine_->doReset(inputContext);
 }
 
 PinyinCandidateWord::PinyinCandidateWord(PinyinEngine *engine,
@@ -331,6 +325,7 @@ void PinyinCandidateWord::select(InputContext *inputContext) const {
     if (idx_ >= context.candidatesToCursor().size()) {
         return;
     }
+    engine_->penalizeEnglishPreference(inputContext, selectLength_);
     context.selectCandidatesToCursor(idx_);
     engine_->updateUI(inputContext);
 }

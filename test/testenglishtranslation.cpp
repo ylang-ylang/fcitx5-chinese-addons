@@ -7,19 +7,27 @@ using namespace fcitx;
 int main() {
     std::stringstream input;
     input << R"TEST(
-# word<TAB>preferred translation
-Persistent	持久的；持续存在的
-TMUX	终端复用器
-Persistent	这个重复定义不会覆盖前一个
+# word<TAB>part of speech<TAB>preferred translation
+Persistent	adj.	持久的
+TMUX	n.	终端复用器
+legacy	旧格式释义
+Persistent	n.	这个重复定义不会覆盖前一个
 invalid line
 )TEST";
 
     EnglishTranslationDictionary dictionary;
     FCITX_ASSERT(dictionary.load(input));
-    FCITX_ASSERT(dictionary.size() == 2);
-    FCITX_ASSERT(dictionary.lookup("persistent") == "持久的；持续存在的");
-    FCITX_ASSERT(dictionary.lookup("PERSISTENT") == "持久的；持续存在的");
-    FCITX_ASSERT(dictionary.lookup("tmux") == "终端复用器");
-    FCITX_ASSERT(dictionary.lookup("missing").empty());
+    FCITX_ASSERT(dictionary.size() == 3);
+    const auto *persistent = dictionary.lookup("persistent");
+    FCITX_ASSERT(persistent);
+    FCITX_ASSERT(persistent->partOfSpeech == "adj.");
+    FCITX_ASSERT(persistent->translation == "持久的");
+    FCITX_ASSERT(persistent->comment() == "(adj. 持久的)");
+    FCITX_ASSERT(dictionary.lookup("PERSISTENT") == persistent);
+    const auto *tmux = dictionary.lookup("tmux");
+    FCITX_ASSERT(tmux && tmux->comment() == "(n. 终端复用器)");
+    const auto *legacy = dictionary.lookup("legacy");
+    FCITX_ASSERT(legacy && legacy->comment() == "(旧格式释义)");
+    FCITX_ASSERT(!dictionary.lookup("missing"));
     return 0;
 }

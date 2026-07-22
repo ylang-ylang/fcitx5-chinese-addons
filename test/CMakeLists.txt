@@ -39,6 +39,8 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/pinyin")
 configure_file(english-translation.dict
                "${CMAKE_CURRENT_BINARY_DIR}/pinyin/english-translation.dict"
                COPYONLY)
+configure_file(customphrase "${CMAKE_CURRENT_BINARY_DIR}/pinyin/customphrase"
+               COPYONLY)
 
 find_program(
     TEST_COMP_SPELL_DICT comp-spell-dict
@@ -79,6 +81,11 @@ add_executable(testenglishtranslation testenglishtranslation.cpp
                ../im/pinyin/englishtranslation.cpp)
 target_link_libraries(testenglishtranslation Fcitx5::Utils)
 add_test(NAME testenglishtranslation COMMAND testenglishtranslation)
+
+add_executable(testenglishpreference testenglishpreference.cpp
+               ../im/pinyin/englishpreference.cpp)
+target_link_libraries(testenglishpreference Fcitx5::Utils)
+add_test(NAME testenglishpreference COMMAND testenglishpreference)
 
 add_executable(testsymboldictionary testsymboldictionary.cpp ../im/pinyin/symboldictionary.cpp)
 target_link_libraries(testsymboldictionary Fcitx5::Utils LibIME::Core)
