@@ -1,6 +1,7 @@
 set(PINYIN_SOURCES
     pinyin.cpp
     customphrase.cpp
+    englishtranslation.cpp
     symboldictionary.cpp
     workerthread.cpp
     pinyincandidate.cpp

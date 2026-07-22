@@ -1,0 +1,11 @@
+1000 apple
+1000 detest
+1000 docker
+1000 iphone
+1000 kubernetes
+1000 persistent
+900 persisting
+900 resistant
+1000 python
+1000 tmux
+1000 typescript

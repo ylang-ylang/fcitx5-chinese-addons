@@ -186,6 +186,102 @@ std::tuple<bool, int> englishNess(const std::string &input, bool sp) {
     return {false, (weight + 7) / 10};
 }
 
+bool isAsciiEnglishWord(std::string_view input) {
+    return !input.empty() && std::ranges::all_of(input, [](char c) {
+        const auto byte = static_cast<unsigned char>(c);
+        return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
+    });
+}
+
+std::string lowercaseAscii(std::string_view input) {
+    std::string result;
+    result.reserve(input.size());
+    for (const auto character : input) {
+        const auto byte = static_cast<unsigned char>(character);
+        result.push_back(byte >= 'A' && byte <= 'Z'
+                             ? static_cast<char>(byte - 'A' + 'a')
+                             : character);
+    }
+    return result;
+}
+
+// This bounded optimal-string-alignment distance is only used to reject
+// implausible dictionary hints when fuzzy English is explicitly enabled.
+// Adjacent transpositions count as one edit. The spell addon remains
+// responsible for producing and ordering the native hints.
+size_t boundedEditDistance(std::string_view lhs, std::string_view rhs,
+                           size_t limit) {
+    if (lhs.size() > rhs.size() + limit || rhs.size() > lhs.size() + limit) {
+        return limit + 1;
+    }
+
+    std::vector<size_t> previousPrevious(rhs.size() + 1);
+    std::vector<size_t> previous(rhs.size() + 1);
+    std::vector<size_t> current(rhs.size() + 1);
+    for (size_t i = 0; i <= rhs.size(); i++) {
+        previous[i] = i;
+    }
+
+    for (size_t i = 1; i <= lhs.size(); i++) {
+        current[0] = i;
+        size_t rowMinimum = current[0];
+        for (size_t j = 1; j <= rhs.size(); j++) {
+            current[j] =
+                std::min({previous[j] + 1, current[j - 1] + 1,
+                          previous[j - 1] + (lhs[i - 1] != rhs[j - 1])});
+            if (i > 1 && j > 1 && lhs[i - 1] == rhs[j - 2] &&
+                lhs[i - 2] == rhs[j - 1]) {
+                current[j] = std::min(current[j], previousPrevious[j - 2] + 1);
+            }
+            rowMinimum = std::min(rowMinimum, current[j]);
+        }
+        if (rowMinimum > limit) {
+            return limit + 1;
+        }
+        previousPrevious.swap(previous);
+        previous.swap(current);
+    }
+    return previous[rhs.size()];
+}
+
+bool isCompleteShuangpinCode(std::string_view input,
+                             const libime::ShuangpinProfile &profile) {
+    if (input.empty() || input.size() % 2 != 0) {
+        return false;
+    }
+    for (size_t offset = 0; offset < input.size(); offset += 2) {
+        if (libime::PinyinEncoder::shuangpinToPinyin(input.substr(offset, 2),
+                                                     profile)
+                .empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool hasUniqueNearEnglish(std::string_view input,
+                          const std::vector<std::string> &results) {
+    const auto normalizedInput = lowercaseAscii(input);
+    const size_t limit = input.size() >= 8 ? 2 : 1;
+    size_t bestDistance = limit + 1;
+    size_t bestCount = 0;
+    for (const auto &result : results) {
+        const auto normalizedResult = lowercaseAscii(result);
+        const auto distance =
+            boundedEditDistance(normalizedInput, normalizedResult, limit);
+        if (distance > limit) {
+            continue;
+        }
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestCount = 1;
+        } else if (distance == bestDistance) {
+            bestCount++;
+        }
+    }
+    return bestDistance <= limit && bestCount == 1;
+}
+
 bool isStroke(const std::string &input) {
     static const std::unordered_set<char> py{'h', 'p', 's', 'z', 'n'};
     return std::all_of(input.begin(), input.end(),
@@ -573,6 +669,31 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
         std::unordered_map<std::string,
                            std::unique_ptr<PinyinAbstractCandidateWord>>
             customCandidateMap;
+        size_t englishTranslationCount = 0;
+        auto addEnglishTranslation = [&](std::string_view source,
+                                         size_t inputLength,
+                                         CandidateOrder sourceOrder) {
+            if (!*config_.englishTranslationEnabled ||
+                englishTranslationCount >=
+                    static_cast<size_t>(
+                        *config_.englishTranslationCandidateLimit)) {
+                return;
+            }
+            auto translation = englishTranslation(source);
+            if (translation.empty() || translation == source ||
+                customCandidateMap.contains(translation) ||
+                context.candidatesToCursorSet().contains(translation)) {
+                return;
+            }
+            customCandidateMap.emplace(
+                translation, std::make_unique<EnglishTranslationCandidateWord>(
+                                 this, std::string(source),
+                                 std::move(translation), inputLength,
+                                 CandidateOrder{sourceOrder.first,
+                                                customCandidateMap.size()}));
+            englishTranslationCount++;
+        };
+
         /// Create custom phrase candidate {{{
         do {
             const auto *results = customPhrase_.lookup(pyBeforeCursor);
@@ -592,12 +713,13 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
                 }
                 std::string customPhrase =
                     result.isDynamic() ? result.value() : phrase;
+                const auto order = CandidateOrder{result.order() - 1,
+                                                  customCandidateMap.size()};
                 customCandidateMap.emplace(
                     phrase, std::make_unique<CustomPhraseCandidateWord>(
-                                this, pyBeforeCursor.size(),
-                                CandidateOrder{result.order() - 1,
-                                               customCandidateMap.size()},
-                                phrase, std::move(customPhrase)));
+                                this, pyBeforeCursor.size(), order, phrase,
+                                std::move(customPhrase)));
+                addEnglishTranslation(phrase, pyBeforeCursor.size(), order);
             }
         } while (false);
         /// }}}
@@ -636,15 +758,42 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
             selectedLength <= context.cursor()) {
             auto [hasUpper, engNess] =
                 englishNess(parsedPy, context.useShuangpin());
-            if (engNess) {
+            const bool canUseFuzzyEnglish =
+                *config_.fuzzyEnglishEnabled && fullResult && !hasUpper &&
+                !customCandidateMap.contains(pyBeforeCursor) &&
+                isAsciiEnglishWord(pyBeforeCursor) &&
+                pyBeforeCursor.size() >=
+                    static_cast<size_t>(*config_.fuzzyEnglishMinLength);
+            const bool requestFuzzyEnglish = canUseFuzzyEnglish && !engNess;
+            if (engNess || requestFuzzyEnglish) {
                 parsedPyCursor -= selectedSentence.length();
                 parsedPy = parsedPy.substr(
                     selectedSentence.size(),
                     parsedPyCursor > selectedSentence.length()
                         ? parsedPyCursor - selectedSentence.length()
                         : std::string::npos);
+                const auto candidateLimit =
+                    canUseFuzzyEnglish ? static_cast<size_t>(
+                                             *config_.fuzzyEnglishMaxCandidates)
+                                       : static_cast<size_t>(engNess);
+                // Fetch a few extra hints so confidence is not inferred from a
+                // result list truncated to one configured candidate.
+                const auto spellLimit =
+                    canUseFuzzyEnglish ? std::max<size_t>(candidateLimit + 1, 5)
+                                       : candidateLimit;
                 auto results = spell()->call<ISpell::hintWithProvider>(
-                    "en", SpellProvider::Custom, pyBeforeCursor, engNess);
+                    "en", SpellProvider::Custom, pyBeforeCursor, spellLimit);
+
+                if (canUseFuzzyEnglish) {
+                    const size_t maxDistance =
+                        pyBeforeCursor.size() >= 8 ? 2 : 1;
+                    const auto normalizedInput = lowercaseAscii(pyBeforeCursor);
+                    std::erase_if(results, [&](const auto &result) {
+                        return boundedEditDistance(normalizedInput,
+                                                   lowercaseAscii(result),
+                                                   maxDistance) > maxDistance;
+                    });
+                }
 
                 // Our hint doesn't work well with mixed case, so, always put a
                 // word as is.
@@ -660,15 +809,30 @@ void PinyinEngine::updateUI(InputContext *inputContext) {
                 }
 
                 int position = hasUpper ? 0 : 1;
+                const auto shuangpinProfile = ime_->shuangpinProfile();
+                const bool completeShuangpinCode =
+                    context.useShuangpin() && shuangpinProfile &&
+                    isCompleteShuangpinCode(pyBeforeCursor, *shuangpinProfile);
+                if (canUseFuzzyEnglish && *config_.fuzzyEnglishPromote &&
+                    !completeShuangpinCode &&
+                    hasUniqueNearEnglish(pyBeforeCursor, results)) {
+                    position = 0;
+                }
+                if (canUseFuzzyEnglish && results.size() > candidateLimit) {
+                    results.resize(candidateLimit);
+                }
                 for (const auto &result : results) {
                     if (customCandidateMap.contains(result)) {
                         continue;
                     }
+                    const auto order =
+                        CandidateOrder{static_cast<size_t>(position++),
+                                       customCandidateMap.size()};
                     customCandidateMap.emplace(
-                        result, std::make_unique<SpellCandidateWord>(
-                                    this, result, pyBeforeCursor.size(),
-                                    CandidateOrder{position++,
-                                                   customCandidateMap.size()}));
+                        result,
+                        std::make_unique<SpellCandidateWord>(
+                            this, result, pyBeforeCursor.size(), order));
+                    addEnglishTranslation(result, pyBeforeCursor.size(), order);
                 }
             }
         }
@@ -1104,6 +1268,36 @@ void PinyinEngine::loadCustomPhrase() {
     }
 }
 
+void PinyinEngine::loadEnglishTranslations() {
+    englishTranslations_.clear();
+    if (!*config_.englishTranslationEnabled) {
+        return;
+    }
+
+    const auto &standardPath = StandardPaths::global();
+    auto file = standardPath.open(StandardPathsType::PkgData,
+                                  "pinyin/english-translation.dict");
+    if (!file.isValid()) {
+        return;
+    }
+
+    try {
+        IFDStreamBuf buffer(file.fd());
+        std::istream in(&buffer);
+        if (!englishTranslations_.load(in)) {
+            PINYIN_ERROR() << "Failed to read English translation dictionary.";
+            englishTranslations_.clear();
+        } else {
+            PINYIN_DEBUG() << "Loaded " << englishTranslations_.size()
+                           << " English translations.";
+        }
+    } catch (const std::exception &e) {
+        englishTranslations_.clear();
+        PINYIN_ERROR() << "Failed to load English translation dictionary: "
+                       << e.what();
+    }
+}
+
 void PinyinEngine::populateConfig() {
     if (*config_.firstRun) {
         config_.firstRun.setValue(false);
@@ -1280,6 +1474,7 @@ void PinyinEngine::reloadConfig() {
     PINYIN_DEBUG() << "Reload pinyin config.";
     readAsIni(config_, "conf/pinyin.conf");
     populateConfig();
+    loadEnglishTranslations();
 }
 void PinyinEngine::activate(const fcitx::InputMethodEntry &entry,
                             fcitx::InputContextEvent &event) {
