@@ -194,6 +194,24 @@ private:
     std::string word_;
 };
 
+/**
+ * A translation candidate is deliberately not a custom phrase.  Selecting it
+ * commits the translation directly and resets the pinyin context, so choosing
+ * a definition cannot create a bogus pinyin learning record.
+ */
+class EnglishTranslationCandidateWord : public PinyinAbstractCandidateWord {
+public:
+    EnglishTranslationCandidateWord(PinyinEngine *engine, std::string source,
+                                    std::string translation, size_t inputLength,
+                                    CandidateOrder order);
+
+    void select(InputContext *inputContext) const override;
+
+private:
+    PinyinEngine *engine_;
+    std::string translation_;
+};
+
 class PinyinCandidateWord : public PinyinAbstractCandidateWord,
                             public InsertableAsCustomPhraseInterface,
                             public PinyinCandidateIndexInterface {

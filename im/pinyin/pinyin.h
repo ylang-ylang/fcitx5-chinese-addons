@@ -8,6 +8,7 @@
 #define _PINYIN_PINYIN_H_
 
 #include "customphrase.h"
+#include "englishtranslation.h"
 #include "symboldictionary.h"
 #include "workerthread.h"
 #include <cstddef>
@@ -173,6 +174,27 @@ FCITX_CONFIGURATION(
         this, "PageSize", _("Candidates Per Page"), 7, IntConstrain(3, 10)};
     Option<bool> spellEnabled{this, "SpellEnabled",
                               _("Show English Candidates"), true};
+    Option<bool> fuzzyEnglishEnabled{this, "FuzzyEnglishEnabled",
+                                     _("Enable fuzzy English candidates"),
+                                     false};
+    Option<int, IntConstrain> fuzzyEnglishMinLength{
+        this, "FuzzyEnglishMinLength", _("Minimum fuzzy English length"), 5,
+        IntConstrain(4, 32)};
+    Option<int, IntConstrain> fuzzyEnglishMaxCandidates{
+        this, "FuzzyEnglishMaxCandidates",
+        _("Maximum fuzzy English candidates"), 3, IntConstrain(1, 10)};
+    Option<bool> fuzzyEnglishPromote{this, "FuzzyEnglishPromote",
+                                     _("Promote confident fuzzy English"),
+                                     false};
+    Option<bool> englishTranslationEnabled{this, "EnglishTranslationEnabled",
+                                           _("Show English translations"),
+                                           false};
+    Option<int, IntConstrain> englishTranslationCandidateLimit{
+        this, "EnglishTranslationCandidateLimit",
+        _("Number of English translations"), 1, IntConstrain(1, 3)};
+    Option<bool> englishTranslationShowSource{
+        this, "EnglishTranslationShowSource",
+        _("Show the English source in translation comments"), true};
     Option<bool> symbolsEnabled{this, "SymbolsEnabled",
                                 _("Show symbol candidates"), true};
     Option<bool> chaiziEnabled{this, "ChaiziEnabled",
@@ -430,6 +452,7 @@ public:
         config_.load(config, true);
         safeSaveAsIni(config_, "conf/pinyin.conf");
         populateConfig();
+        loadEnglishTranslations();
     }
 
     void setSubConfig(const std::string &path,
@@ -478,7 +501,12 @@ private:
     std::string evaluateCustomPhrase(InputContext *inputContext,
                                      std::string_view key);
 
+    std::string englishTranslation(std::string_view word) const {
+        return englishTranslations_.lookup(word);
+    }
+
     void populateConfig();
+    void loadEnglishTranslations();
 
     void updateForgetCandidate(InputContext *inputContext);
 
@@ -517,6 +545,7 @@ private:
     std::unique_ptr<EventSource> deferredPreload_;
     std::unique_ptr<HandlerTableEntry<EventHandler>> event_;
     CustomPhraseDict customPhrase_;
+    EnglishTranslationDictionary englishTranslations_;
     SymbolDict symbols_;
     WorkerThread worker_;
     std::list<std::unique_ptr<TaskToken>> persistentTask_;
