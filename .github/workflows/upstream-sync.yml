@@ -18,12 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  issues: write
+  contents: read
 
 jobs:
   prepare:
     name: Replay downstream patches
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       state: ${{ steps.sync.outputs.state }}
@@ -51,6 +52,8 @@ jobs:
 
   clang-format:
     name: Check candidate clang-format
+    permissions:
+      contents: read
     needs: prepare
     if: needs.prepare.outputs.state == 'ready'
     runs-on: ubuntu-latest
@@ -67,6 +70,8 @@ jobs:
 
   test:
     name: Test candidate (${{ matrix.compiler }})
+    permissions:
+      contents: read
     needs: [prepare, clang-format]
     if: needs.prepare.outputs.state == 'ready'
     runs-on: ubuntu-latest
@@ -149,6 +154,10 @@ jobs:
 
   promote:
     name: Promote tested candidate
+    permissions:
+      actions: write
+      contents: write
+      issues: write
     needs: [prepare, clang-format, test]
     if: >-
       needs.prepare.outputs.state == 'ready' &&
@@ -177,6 +186,15 @@ jobs:
             echo "- Upstream: \`$UPSTREAM_SHA\`"
             echo "- Downstream: \`$CANDIDATE_SHA\`"
           } >>"$GITHUB_STEP_SUMMARY"
+      - name: Trigger full CI and CodeQL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: feature/english-fuzzy-translation
+        run: |
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/dispatches" \
+            -f ref="$TARGET_BRANCH"
+          echo "- Full CI/CodeQL dispatch: requested" >>"$GITHUB_STEP_SUMMARY"
       - name: Close a previous sync issue
         uses: actions/github-script@v7
         with:
@@ -199,6 +217,9 @@ jobs:
 
   report-failure:
     name: Report blocked sync
+    permissions:
+      contents: read
+      issues: write
     needs: [prepare, clang-format, test, promote]
     if: >-
       ${{ always() && (
@@ -241,7 +262,7 @@ jobs:
               "",
               `[Open workflow run](${runUrl})`,
               "",
-              "The stable downstream branch was left unchanged.",
+              "The stable branch is only promoted after candidate validation. If the promotion job failed, inspect whether its atomic push completed before a post-promotion step failed.",
             ].join("\n");
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
