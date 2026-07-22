@@ -269,6 +269,22 @@ void SpellCandidateWord::select(InputContext *inputContext) const {
     engine_->updateUI(inputContext);
 }
 
+EnglishTranslationCandidateWord::EnglishTranslationCandidateWord(
+    PinyinEngine *engine, std::string source, std::string translation,
+    size_t inputLength, CandidateOrder order)
+    : PinyinAbstractCandidateWord(inputLength, order), engine_(engine),
+      translation_(std::move(translation)) {
+    setText(Text(translation_));
+    if (*engine_->config().englishTranslationShowSource) {
+        setComment(Text(std::format("← {} 的中文释义", source)));
+    }
+}
+
+void EnglishTranslationCandidateWord::select(InputContext *inputContext) const {
+    inputContext->commitString(translation_);
+    engine_->doReset(inputContext);
+}
+
 PinyinCandidateWord::PinyinCandidateWord(PinyinEngine *engine,
                                          InputContext *inputContext, Text text,
                                          size_t selectLength, size_t idx,

@@ -29,9 +29,35 @@ add_dependencies(testchttrans chttrans chttrans.conf.in-fmt copy-addon copy-test
 add_test(NAME testchttrans COMMAND testchttrans)
 
 add_subdirectory(addon)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/pinyin")
+configure_file(english-translation.dict
+               "${CMAKE_CURRENT_BINARY_DIR}/pinyin/english-translation.dict"
+               COPYONLY)
+
+find_program(
+    TEST_COMP_SPELL_DICT comp-spell-dict
+    HINTS "${FCITX_SYS_INSTALL_PREFIX}/lib/fcitx5/libexec"
+          "${FCITX_SYS_INSTALL_PREFIX}/lib64/fcitx5/libexec")
+if (NOT TEST_COMP_SPELL_DICT)
+    message(FATAL_ERROR "comp-spell-dict is required by testpinyin")
+endif()
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/spell")
+set(TEST_ENGLISH_SPELL_DICT
+    "${CMAKE_CURRENT_BINARY_DIR}/spell/en_dict.fscd")
+add_custom_command(
+    OUTPUT "${TEST_ENGLISH_SPELL_DICT}"
+    COMMAND "${TEST_COMP_SPELL_DICT}" --comp-dict
+            "${CMAKE_CURRENT_SOURCE_DIR}/english-spell-dict.txt"
+            "${TEST_ENGLISH_SPELL_DICT}"
+    DEPENDS english-spell-dict.txt
+    VERBATIM)
+add_custom_target(test-english-spell-dict
+                  DEPENDS "${TEST_ENGLISH_SPELL_DICT}")
+
 add_executable(testpinyin testpinyin.cpp)
 target_link_libraries(testpinyin Fcitx5::Core Fcitx5::Module::TestFrontend)
-add_dependencies(testpinyin pinyin pinyinhelper copy-addon copy-im)
+add_dependencies(testpinyin pinyin pinyinhelper copy-addon copy-im
+                 test-english-spell-dict)
 add_test(NAME testpinyin COMMAND testpinyin)
 add_executable(testtable testtable.cpp)
 target_link_libraries(testtable Fcitx5::Core Fcitx5::Module::TestFrontend)
@@ -42,6 +68,11 @@ add_executable(testcustomphrase testcustomphrase.cpp ../im/pinyin/customphrase.c
 target_compile_definitions(testcustomphrase PRIVATE "-DFCITX_CUSTOM_PHRASE_TEST")
 target_link_libraries(testcustomphrase Fcitx5::Utils LibIME::Core)
 add_test(NAME testcustomphrase COMMAND testcustomphrase)
+
+add_executable(testenglishtranslation testenglishtranslation.cpp
+               ../im/pinyin/englishtranslation.cpp)
+target_link_libraries(testenglishtranslation Fcitx5::Utils)
+add_test(NAME testenglishtranslation COMMAND testenglishtranslation)
 
 add_executable(testsymboldictionary testsymboldictionary.cpp ../im/pinyin/symboldictionary.cpp)
 target_link_libraries(testsymboldictionary Fcitx5::Utils LibIME::Core)
