@@ -6,6 +6,7 @@
 #include "englishtranslation.h"
 #include <algorithm>
 #include <cctype>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -26,6 +27,16 @@ std::string trim(std::string_view value) {
 }
 
 } // namespace
+
+std::string EnglishTranslationEntry::comment() const {
+    if (translation.empty()) {
+        return {};
+    }
+    if (partOfSpeech.empty()) {
+        return std::format("({})", translation);
+    }
+    return std::format("({} {})", partOfSpeech, translation);
+}
 
 std::string EnglishTranslationDictionary::normalize(std::string_view word) {
     std::string result;
@@ -54,12 +65,22 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
             continue;
         }
 
-        const auto separator = lineView.find('\t');
-        if (separator == std::string_view::npos) {
+        const auto firstSeparator = lineView.find('\t');
+        if (firstSeparator == std::string_view::npos) {
             continue;
         }
-        const auto word = trim(lineView.substr(0, separator));
-        const auto translation = trim(lineView.substr(separator + 1));
+        const auto word = trim(lineView.substr(0, firstSeparator));
+        auto value = lineView.substr(firstSeparator + 1);
+        const auto secondSeparator = value.find('\t');
+
+        std::string partOfSpeech;
+        std::string translation;
+        if (secondSeparator == std::string_view::npos) {
+            translation = trim(value);
+        } else {
+            partOfSpeech = trim(value.substr(0, secondSeparator));
+            translation = trim(value.substr(secondSeparator + 1));
+        }
         if (word.empty() || translation.empty()) {
             continue;
         }
@@ -69,20 +90,24 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
             continue;
         }
         // Keep the first definition in case an updater accidentally emits a
-        // duplicate.  This makes output deterministic across updates.
-        translations_.try_emplace(std::move(normalized), translation);
+        // duplicate. This makes output deterministic across updates.
+        translations_.try_emplace(
+            std::move(normalized),
+            EnglishTranslationEntry{std::move(partOfSpeech),
+                                    std::move(translation)});
     }
     return static_cast<bool>(input) || input.eof();
 }
 
 void EnglishTranslationDictionary::clear() { translations_.clear(); }
 
-std::string EnglishTranslationDictionary::lookup(std::string_view word) const {
+const EnglishTranslationEntry *
+EnglishTranslationDictionary::lookup(std::string_view word) const {
     auto iter = translations_.find(normalize(word));
     if (iter == translations_.end()) {
-        return {};
+        return nullptr;
     }
-    return iter->second;
+    return &iter->second;
 }
 
 } // namespace fcitx

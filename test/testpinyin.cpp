@@ -272,26 +272,40 @@ void testEnglishFuzzyTranslation(Instance *instance) {
                 .text()
                 .toString();
         };
+        const auto hasNonAscii = [](std::string_view text) {
+            return std::ranges::any_of(text, [](char byte) {
+                return static_cast<unsigned char>(byte) >= 0x80;
+            });
+        };
 
         RawConfig config;
         config.setValueByPath("ShuangpinProfile", "Xiaohe");
         config.setValueByPath("Fuzzy/PartialSp", "False");
         config.setValueByPath("FuzzyEnglishEnabled", "False");
+        config.setValueByPath("AdaptiveEnglishEnabled", "False");
         config.setValueByPath("EnglishTranslationEnabled", "False");
         pinyin->setConfig(config);
 
-        // Disabling both options preserves the upstream candidate behavior.
+        // Disabling all English extensions preserves upstream behavior.
         type("persistant");
-        FCITX_ASSERT(findCandidate(ic, "持久的；持续存在的") < 0);
+        const auto disabledEnglishIndex = findCandidate(ic, "persistent");
+        if (disabledEnglishIndex >= 0) {
+            FCITX_ASSERT(ic->inputPanel()
+                             .candidateList()
+                             ->toBulk()
+                             ->candidateFromAll(disabledEnglishIndex)
+                             .comment()
+                             .empty());
+        }
         ic->reset();
 
         config.setValueByPath("FuzzyEnglishEnabled", "True");
         config.setValueByPath("FuzzyEnglishMinLength", "32");
         config.setValueByPath("FuzzyEnglishMaxCandidates", "3");
         config.setValueByPath("FuzzyEnglishPromote", "True");
+        config.setValueByPath("AdaptiveEnglishEnabled", "True");
+        config.setValueByPath("AdaptiveEnglishThreshold", "2");
         config.setValueByPath("EnglishTranslationEnabled", "True");
-        config.setValueByPath("EnglishTranslationCandidateLimit", "1");
-        config.setValueByPath("EnglishTranslationShowSource", "True");
         pinyin->setConfig(config);
 
         // The minimum length also gates promotion of native lowercase hints.
@@ -299,28 +313,42 @@ void testEnglishFuzzyTranslation(Instance *instance) {
         FCITX_ASSERT(firstCandidate() != "persistent");
         ic->reset();
 
-        config.setValueByPath("FuzzyEnglishMinLength", "5");
+        config.setValueByPath("FuzzyEnglishMinLength", "4");
         pinyin->setConfig(config);
         type("persistant");
 
         const auto persistentIndex = findCandidateOrDie(ic, "persistent");
-        const auto translationIndex =
-            findCandidateOrDie(ic, "持久的；持续存在的");
         FCITX_ASSERT(persistentIndex == 0);
-        FCITX_ASSERT(translationIndex == persistentIndex + 1);
-        const auto &translation =
-            ic->inputPanel().candidateList()->candidate(translationIndex);
-        FCITX_ASSERT(translation.comment().toString().find("persistent") !=
-                     std::string::npos);
-
-        testfrontend->call<ITestFrontend::pushCommitExpectation>(
-            "持久的；持续存在的");
-        translation.select(ic);
+        const auto &persistent =
+            ic->inputPanel().candidateList()->toBulk()->candidateFromAll(
+                persistentIndex);
+        FCITX_ASSERT(persistent.comment().toString() == "(adj. 持久的)");
+        FCITX_ASSERT(findCandidate(ic, "持久的") < 0);
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("persistent");
+        persistent.select(ic);
         FCITX_ASSERT(ic->inputPanel().preedit().toString().empty());
 
         // Adjacent English transpositions count as one bounded edit.
         type("pythno");
         FCITX_ASSERT(firstCandidate() == "python");
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(n. Python 编程语言)");
+        ic->reset();
+
+        // A short exact English word is compact and unambiguous.
+        type("user");
+        FCITX_ASSERT(firstCandidate() == "user");
+        FCITX_ASSERT(findCandidateOrDie(ic, "云用户") > 0);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(n. 用户)");
         ic->reset();
 
         // Enabling fuzzy English must not displace complete Xiaohe codes.
@@ -331,23 +359,51 @@ void testEnglishFuzzyTranslation(Instance *instance) {
         FCITX_ASSERT(firstCandidate() == "多个");
         ic->reset();
         type("yuxylm");
-        const auto firstChineseCandidate = firstCandidate();
-        FCITX_ASSERT(std::ranges::any_of(firstChineseCandidate, [](char byte) {
-            return static_cast<unsigned char>(byte) >= 0x80;
-        }));
+        FCITX_ASSERT(hasNonAscii(firstCandidate()));
         ic->reset();
         type("detese");
-        const auto protectedShuangpinCandidate = firstCandidate();
-        FCITX_ASSERT(
-            std::ranges::any_of(protectedShuangpinCandidate, [](char byte) {
-                return static_cast<unsigned char>(byte) >= 0x80;
-            }));
+        FCITX_ASSERT(hasNonAscii(firstCandidate()));
         FCITX_ASSERT(findCandidateOrDie(ic, "detest") > 0);
+        ic->reset();
+
+        // Repeated raw commits are explicit feedback and override the strict
+        // Shuangpin protection. Choosing Chinese later removes one reward.
+        type("code");
+        FCITX_ASSERT(hasNonAscii(firstCandidate()));
+        FCITX_ASSERT(findCandidateOrDie(ic, "code") > 0);
+        for (int i = 0; i < 2; i++) {
+            testfrontend->call<ITestFrontend::pushCommitExpectation>("code");
+            testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Return"),
+                                                        false);
+            if (i == 0) {
+                type("code");
+            }
+        }
+        type("code");
+        FCITX_ASSERT(firstCandidate() == "code");
+        FCITX_ASSERT(findCandidateOrDie(ic, "云代码") > 0);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(n. 代码)");
+
+        auto *bulk = ic->inputPanel().candidateList()->toBulk();
+        const auto chineseIndex = findCandidateOrDie(ic, "错的");
+        FCITX_ASSERT(chineseIndex > 0);
+        const auto &chinese = bulk->candidateFromAll(chineseIndex);
+        testfrontend->call<ITestFrontend::pushCommitExpectation>(
+            chinese.text().toString());
+        chinese.select(ic);
+        type("code");
+        FCITX_ASSERT(hasNonAscii(firstCandidate()));
         ic->reset();
 
         RawConfig resetConfig;
         resetConfig.setValueByPath("FuzzyEnglishEnabled", "False");
         resetConfig.setValueByPath("FuzzyEnglishPromote", "False");
+        resetConfig.setValueByPath("AdaptiveEnglishEnabled", "False");
         resetConfig.setValueByPath("EnglishTranslationEnabled", "False");
         pinyin->setConfig(resetConfig);
     });
@@ -439,13 +495,11 @@ void testPinyinTabFilter(Instance *instance) {
         for (const auto &action : actions) {
             names.push_back(action.text());
         }
-
         auto indexOf = [&names](std::string_view name) {
             auto it = std::ranges::find(names, name);
             FCITX_ASSERT(it != names.end());
             return std::distance(names.begin(), it);
         };
-
         const auto xiAction = actions[indexOf("xi")];
         const auto singleAction = actions[indexOf("单字")];
         const auto strokeAction = actions[indexOf("笔画")];
