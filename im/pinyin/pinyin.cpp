@@ -1910,11 +1910,11 @@ bool PinyinEngine::startEnglishPhrase(KeyEvent &event) {
     }
     const int index = std::max(candidateList->cursorIndex(), 0);
     const auto &candidate = candidateList->candidate(index);
-    if (!dynamic_cast<const SpellCandidateWord *>(&candidate)) {
-        return false;
-    }
+    const auto *englishCandidate =
+        dynamic_cast<const PinyinAbstractCandidateWord *>(&candidate);
     const auto word = candidate.text().toStringForCommit();
-    if (!englishExpansions_.hasPhraseContinuation(word)) {
+    if (!englishCandidate || !isAsciiEnglishWord(word) ||
+        !englishExpansions_.hasPhraseContinuation(word)) {
         return false;
     }
 
@@ -2030,13 +2030,13 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
         }
         sourceIndex = std::max(candidateList->cursorIndex(), 0);
         const auto &candidate = candidateList->candidate(sourceIndex);
-        const auto *spellCandidate =
-            dynamic_cast<const SpellCandidateWord *>(&candidate);
-        if (!spellCandidate) {
+        const auto *englishCandidate =
+            dynamic_cast<const PinyinAbstractCandidateWord *>(&candidate);
+        source = candidate.text().toStringForCommit();
+        if (!englishCandidate || !isAsciiEnglishWord(source)) {
             return false;
         }
-        source = candidate.text().toStringForCommit();
-        selectLength = spellCandidate->selectLength();
+        selectLength = englishCandidate->selectLength();
         if (const auto *bulk = candidateList->toBulk()) {
             for (int index = 0; index < bulk->totalSize(); index++) {
                 if (&bulk->candidateFromAll(index) == &candidate) {
