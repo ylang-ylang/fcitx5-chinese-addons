@@ -307,6 +307,47 @@ void SpellCandidateWord::select(InputContext *inputContext) const {
     engine_->updateUI(inputContext);
 }
 
+EnglishExpansionCandidateWord::EnglishExpansionCandidateWord(
+    PinyinEngine *engine, std::string word, std::string label,
+    size_t selectLength, bool fromPhrase)
+    : engine_(engine), word_(std::move(word)), selectLength_(selectLength),
+      fromPhrase_(fromPhrase) {
+    setText(Text(word_));
+    setComment(Text(std::format("({})", label)));
+}
+
+void EnglishExpansionCandidateWord::select(InputContext *inputContext) const {
+    engine_->selectEnglishExpansionCandidate(inputContext, selectLength_, word_,
+                                             fromPhrase_);
+}
+
+EnglishPhraseWordCandidateWord::EnglishPhraseWordCandidateWord(
+    PinyinEngine *engine, std::string word, std::string comment)
+    : engine_(engine), word_(std::move(word)) {
+    setText(Text(word_));
+    if (!comment.empty()) {
+        setComment(Text(std::move(comment)));
+    }
+}
+
+void EnglishPhraseWordCandidateWord::select(InputContext *inputContext) const {
+    engine_->acceptEnglishPhraseWord(inputContext, word_);
+}
+
+EnglishPhraseCompletionCandidateWord::EnglishPhraseCompletionCandidateWord(
+    PinyinEngine *engine, std::string phrase, std::string abbreviation)
+    : engine_(engine), phrase_(std::move(phrase)) {
+    setText(Text(phrase_));
+    setComment(Text(abbreviation.empty()
+                        ? "(短语)"
+                        : std::format("(短语·{})", abbreviation)));
+}
+
+void EnglishPhraseCompletionCandidateWord::select(
+    InputContext *inputContext) const {
+    engine_->setEnglishPhrase(inputContext, phrase_);
+}
+
 ChineseEnglishCandidateWord::ChineseEnglishCandidateWord(
     PinyinEngine *engine, std::string word, std::string sourceChinese,
     size_t selectLength)

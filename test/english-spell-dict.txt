@@ -1,5 +1,10 @@
 1000 apple
+1000 application
+1000 as
+1000 by
 1000 code
+1000 configuration
+1000 decide
 1000 detest
 1000 docker
 1000 iphone
@@ -7,8 +12,13 @@
 1000 patch
 1000 persistent
 900 persisting
+1000 possible
+1000 programming
 1000 python
 900 resistant
+1000 soon
+1000 the
 1000 tmux
 1000 typescript
 1000 user
+1000 usual

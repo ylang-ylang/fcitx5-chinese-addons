@@ -61,6 +61,72 @@ LibIME data at:
 The history is a small text file capped at 4096 entries. It never modifies
 `user.dict` or `user.history`.
 
+## On-demand English expansions and known phrases
+
+```ini
+EnglishExpansionEnabled=True
+EnglishExpansionMaxCandidates=10
+EnglishExpansionTrigger=semicolon
+EnglishPhraseEnabled=True
+```
+
+When the highlighted source is an English spell candidate, the trigger opens a
+separate local expansion page instead of the Chinese-to-English page. Ordered
+candidates may include conventional abbreviations, cross-part-of-speech
+families, and inflections:
+
+```text
+[英扩] configuration
+config          (缩·常用)
+cfg             (缩·代码)
+configure       (派生·动)
+configurational (派生·形)
+configurations  (复数)
+```
+
+Space or a selection key commits the expansion. Semicolon or Escape restores
+the original English candidate. Normal Pinyin and Shuangpin behavior is used
+when the highlighted candidate is not English or the dictionary has no entry.
+
+The same dictionary identifies a deliberately small set of abbreviation
+phrases. Selecting an English word with Space starts phrase composition only
+when that word is a prefix of one of those phrases. Subsequent words remain in
+preedit while they continue to match the word-boundary prefix index:
+
+```text
+as -> as soon -> as soon as -> as soon as possible
+```
+
+Pressing semicolon on the completed phrase shows `ASAP (缩·短语)`. Enter commits
+the long phrase. A word that diverges from every known prefix commits the text
+with its trailing Space and returns to normal input. This bounded behavior does
+not use application surrounding-text deletion and does not retain arbitrary
+English sentences in composition. Phrase completions such as
+`as soon as possible (短语·ASAP)` are also exposed while the prefix is active.
+
+Install the generated UTF-8 data at:
+
+```text
+~/.local/share/fcitx5/pinyin/english-expansion.dict
+```
+
+Its format is:
+
+```text
+# source word or phrase<TAB>candidate<TAB>display label
+configuration\tconfig\t缩·常用
+decide\tdecision\t派生·名
+as soon as possible\tASAP\t缩·短语
+```
+
+Lookup is case-insensitive and collapses whitespace. Candidate spelling and
+case are preserved. The maintained local generator combines curated one-way
+abbreviations, ECDICT inflection families, and the derivation, pertainym, and
+participle relations from Open English WordNet 2025. A two-edge closure is
+allowed only within that morphological graph and frequency-filtered with
+ECDICT; semantic synonym or hypernym links are never imported. No Wiktionary or
+WikiMorph data is used.
+
 ## On-demand Chinese-to-English candidates
 
 ```ini

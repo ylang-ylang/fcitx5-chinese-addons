@@ -42,6 +42,9 @@ configure_file(chinese-english.dict
 configure_file(english-translation.dict
                "${CMAKE_CURRENT_BINARY_DIR}/pinyin/english-translation.dict"
                COPYONLY)
+configure_file(english-expansion.dict
+               "${CMAKE_CURRENT_BINARY_DIR}/pinyin/english-expansion.dict"
+               COPYONLY)
 configure_file(customphrase "${CMAKE_CURRENT_BINARY_DIR}/pinyin/customphrase"
                COPYONLY)
 
@@ -84,6 +87,11 @@ add_executable(testenglishtranslation testenglishtranslation.cpp
                ../im/pinyin/englishtranslation.cpp)
 target_link_libraries(testenglishtranslation Fcitx5::Utils)
 add_test(NAME testenglishtranslation COMMAND testenglishtranslation)
+
+add_executable(testenglishexpansion testenglishexpansion.cpp
+               ../im/pinyin/englishexpansion.cpp)
+target_link_libraries(testenglishexpansion Fcitx5::Utils)
+add_test(NAME testenglishexpansion COMMAND testenglishexpansion)
 
 add_executable(testchineseenglish testchineseenglish.cpp
                ../im/pinyin/chineseenglish.cpp)

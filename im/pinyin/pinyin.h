@@ -9,6 +9,7 @@
 
 #include "chineseenglish.h"
 #include "customphrase.h"
+#include "englishexpansion.h"
 #include "englishpreference.h"
 #include "englishtranslation.h"
 #include "symboldictionary.h"
@@ -200,6 +201,20 @@ FCITX_CONFIGURATION(
     Option<int, IntConstrain> englishTranslationMaxMeanings{
         this, "EnglishTranslationMaxMeanings",
         _("Maximum English meaning groups"), 3, IntConstrain(1, 3)};
+    Option<bool> englishExpansionEnabled{
+        this, "EnglishExpansionEnabled",
+        _("Enable on-demand English word and phrase expansions"), false};
+    Option<int, IntConstrain> englishExpansionMaxCandidates{
+        this, "EnglishExpansionMaxCandidates",
+        _("Maximum on-demand English expansion candidates"), 10,
+        IntConstrain(1, 50)};
+    Option<Key, KeyConstrain> englishExpansionTrigger{
+        this, "EnglishExpansionTrigger",
+        _("Key to show expansions of the current English word or phrase"),
+        Key(";"), KeyConstrain{KeyConstrainFlag::AllowModifierLess}};
+    Option<bool> englishPhraseEnabled{
+        this, "EnglishPhraseEnabled",
+        _("Continue known English abbreviation phrases with Space"), true};
     Option<bool> chineseEnglishEnabled{
         this, "ChineseEnglishEnabled",
         _("Enable on-demand Chinese-to-English candidates"), false};
@@ -411,7 +426,13 @@ struct EventSourceTime;
 class CandidateList;
 class PinyinEngine;
 
-enum class PinyinMode { Normal, StrokeFilter, ForgetCandidate, Punctuation };
+enum class PinyinMode {
+    Normal,
+    EnglishPhrase,
+    StrokeFilter,
+    ForgetCandidate,
+    Punctuation
+};
 
 class PinyinState : public InputContextProperty {
 public:
@@ -440,6 +461,14 @@ public:
     bool chineseEnglishMode_ = false;
     std::string chineseEnglishSource_;
     int chineseEnglishSourceIndex_ = -1;
+
+    bool englishExpansionMode_ = false;
+    bool englishExpansionFromPhrase_ = false;
+    std::string englishExpansionSource_;
+    int englishExpansionSourceIndex_ = -1;
+
+    std::string englishPhraseAccepted_;
+    std::string englishPhraseCurrent_;
 };
 
 class PinyinEngine final : public InputMethodEngineV3,
@@ -473,6 +502,7 @@ public:
         safeSaveAsIni(config_, "conf/pinyin.conf");
         populateConfig();
         loadEnglishTranslations();
+        loadEnglishExpansions();
         loadChineseEnglishTranslations();
     }
 
@@ -499,6 +529,14 @@ public:
     void rewardEnglishPreference(InputContext *inputContext);
     void penalizeEnglishPreference(InputContext *inputContext,
                                    size_t selectLength);
+    void selectEnglishExpansionCandidate(InputContext *inputContext,
+                                         size_t selectLength,
+                                         const std::string &word,
+                                         bool fromPhrase);
+    void acceptEnglishPhraseWord(InputContext *inputContext,
+                                 const std::string &word);
+    void setEnglishPhrase(InputContext *inputContext,
+                          const std::string &phrase);
     void selectChineseEnglishCandidate(InputContext *inputContext,
                                        size_t selectLength,
                                        const std::string &word);
@@ -515,6 +553,18 @@ private:
                              const std::string &word);
 
     bool handleCloudpinyinTrigger(KeyEvent &event);
+    bool handleEnglishExpansionTrigger(KeyEvent &event);
+    bool showEnglishExpansionCandidates(InputContext *inputContext);
+    void leaveEnglishExpansionMode(InputContext *inputContext,
+                                   bool restoreCandidate);
+    bool startEnglishPhrase(KeyEvent &event);
+    bool handleEnglishPhrase(KeyEvent &event,
+                             const std::shared_future<uint32_t> &keyChr,
+                             const std::shared_future<std::string> &keyStr);
+    void updateEnglishPhraseUI(InputContext *inputContext);
+    std::string englishPhraseText(const PinyinState &state) const;
+    void commitEnglishPhrase(InputContext *inputContext,
+                             std::string_view suffix = {});
     bool handleChineseEnglishTrigger(KeyEvent &event);
     bool showChineseEnglishCandidates(InputContext *inputContext);
     void leaveChineseEnglishMode(InputContext *inputContext,
@@ -546,6 +596,7 @@ private:
 
     void populateConfig();
     void loadEnglishTranslations();
+    void loadEnglishExpansions();
     void loadChineseEnglishTranslations();
     void loadEnglishPreferences();
     void saveEnglishPreferences();
@@ -590,6 +641,7 @@ private:
     std::unique_ptr<HandlerTableEntry<EventHandler>> event_;
     CustomPhraseDict customPhrase_;
     ChineseEnglishDictionary chineseEnglishTranslations_;
+    EnglishExpansionDictionary englishExpansions_;
     EnglishPreferenceHistory englishPreferences_;
     EnglishTranslationDictionary englishTranslations_;
     SymbolDict symbols_;

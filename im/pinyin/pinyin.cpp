@@ -206,6 +206,12 @@ std::string lowercaseAscii(std::string_view input) {
     return result;
 }
 
+bool isAsciiEnglishPhraseCharacter(char character) {
+    const auto byte = static_cast<unsigned char>(character);
+    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+           character == '\'' || character == '-';
+}
+
 // This bounded optimal-string-alignment distance is only used to reject
 // implausible dictionary hints when fuzzy English is explicitly enabled.
 // Adjacent transpositions count as one edit. The spell addon remains
@@ -616,7 +622,11 @@ void PinyinEngine::updatePuncCandidate(
 
 void PinyinEngine::updateUI(InputContext *inputContext) {
     auto *state = inputContext->propertyFor(&factory_);
-    if (state->chineseEnglishMode_) {
+    if (state->chineseEnglishMode_ || state->englishExpansionMode_) {
+        return;
+    }
+    if (state->mode_ == PinyinMode::EnglishPhrase) {
+        updateEnglishPhraseUI(inputContext);
         return;
     }
     if (state->mode_ == PinyinMode::StrokeFilter) {
@@ -1300,6 +1310,36 @@ void PinyinEngine::loadEnglishTranslations() {
     }
 }
 
+void PinyinEngine::loadEnglishExpansions() {
+    englishExpansions_.clear();
+    if (!*config_.englishExpansionEnabled) {
+        return;
+    }
+
+    const auto &standardPath = StandardPaths::global();
+    auto file = standardPath.open(StandardPathsType::PkgData,
+                                  "pinyin/english-expansion.dict");
+    if (!file.isValid()) {
+        return;
+    }
+
+    try {
+        IFDStreamBuf buffer(file.fd());
+        std::istream in(&buffer);
+        if (!englishExpansions_.load(in)) {
+            PINYIN_ERROR() << "Failed to read English expansion dictionary.";
+            englishExpansions_.clear();
+        } else {
+            PINYIN_DEBUG() << "Loaded " << englishExpansions_.size()
+                           << " English expansion entries.";
+        }
+    } catch (const std::exception &e) {
+        englishExpansions_.clear();
+        PINYIN_ERROR() << "Failed to load English expansion dictionary: "
+                       << e.what();
+    }
+}
+
 void PinyinEngine::loadChineseEnglishTranslations() {
     chineseEnglishTranslations_.clear();
     if (!*config_.chineseEnglishEnabled) {
@@ -1586,6 +1626,7 @@ void PinyinEngine::reloadConfig() {
     readAsIni(config_, "conf/pinyin.conf");
     populateConfig();
     loadEnglishTranslations();
+    loadEnglishExpansions();
     loadChineseEnglishTranslations();
 }
 void PinyinEngine::activate(const fcitx::InputMethodEntry &entry,
@@ -1625,6 +1666,10 @@ void PinyinEngine::deactivate(const fcitx::InputMethodEntry &entry,
             break;
         }
         auto *state = inputContext->propertyFor(&factory_);
+        if (state->mode_ == PinyinMode::EnglishPhrase) {
+            inputContext->commitString(englishPhraseText(*state));
+            break;
+        }
         if (state->mode_ == PinyinMode::Punctuation) {
             auto candidateList = inputContext->inputPanel().candidateList();
             if (!candidateList) {
@@ -1735,6 +1780,390 @@ bool PinyinEngine::handleCloudpinyinTrigger(KeyEvent &event) {
         return true;
     }
     return false;
+}
+
+std::string PinyinEngine::englishPhraseText(const PinyinState &state) const {
+    if (state.englishPhraseAccepted_.empty()) {
+        return state.englishPhraseCurrent_;
+    }
+    if (state.englishPhraseCurrent_.empty()) {
+        return state.englishPhraseAccepted_;
+    }
+    return state.englishPhraseAccepted_ + " " + state.englishPhraseCurrent_;
+}
+
+void PinyinEngine::updateEnglishPhraseUI(InputContext *inputContext) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (state->mode_ != PinyinMode::EnglishPhrase ||
+        state->englishExpansionMode_) {
+        return;
+    }
+
+    auto &inputPanel = inputContext->inputPanel();
+    inputPanel.reset();
+    const auto phrase = englishPhraseText(*state);
+
+    Text preeditText;
+    preeditText.append(phrase, TextFormatFlag::Underline);
+    preeditText.setCursor(phrase.size());
+    if (inputContext->capabilityFlags().test(CapabilityFlag::Preedit) &&
+        *config_.preeditMode != PreeditMode::No) {
+        inputPanel.setClientPreedit(preeditText);
+    } else {
+        inputPanel.setPreedit(preeditText);
+    }
+
+    auto candidates = std::make_unique<CommonCandidateList>();
+    candidates->setPageSize(*config_.pageSize);
+    candidates->setCursorPositionAfterPaging(
+        CursorPositionAfterPaging::ResetToFirst);
+
+    if (!state->englishPhraseCurrent_.empty()) {
+        const auto current = state->englishPhraseCurrent_;
+        candidates->append<EnglishPhraseWordCandidateWord>(
+            this, current, englishTranslationComment(current));
+        if (*config_.spellEnabled && spell()) {
+            auto hints = spell()->call<ISpell::hintWithProvider>(
+                "en", SpellProvider::Custom, current, 4);
+            for (const auto &hint : hints) {
+                if (lowercaseAscii(hint) == lowercaseAscii(current)) {
+                    continue;
+                }
+                candidates->append<EnglishPhraseWordCandidateWord>(
+                    this, hint, englishTranslationComment(hint));
+            }
+        }
+    }
+
+    const auto completions = englishExpansions_.completePhrase(
+        phrase, static_cast<size_t>(*config_.englishExpansionMaxCandidates));
+    for (const auto &completion : completions) {
+        candidates->append<EnglishPhraseCompletionCandidateWord>(
+            this, completion.phrase, completion.hint);
+    }
+    candidates->setSelectionKey(selectionKeys_);
+    if (!candidates->empty()) {
+        candidates->setGlobalCursorIndex(0);
+        inputPanel.setCandidateList(std::move(candidates));
+    }
+    inputPanel.setAuxDown(Text(std::format("[英文短语] {}", phrase)));
+    inputContext->updatePreedit();
+    inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
+}
+
+void PinyinEngine::commitEnglishPhrase(InputContext *inputContext,
+                                       std::string_view suffix) {
+    auto *state = inputContext->propertyFor(&factory_);
+    auto phrase = englishPhraseText(*state);
+    phrase.append(suffix);
+    if (!phrase.empty()) {
+        inputContext->commitString(phrase);
+    }
+    doReset(inputContext);
+}
+
+void PinyinEngine::acceptEnglishPhraseWord(InputContext *inputContext,
+                                           const std::string &word) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (state->mode_ != PinyinMode::EnglishPhrase || word.empty()) {
+        return;
+    }
+    std::string phrase = state->englishPhraseAccepted_;
+    if (!phrase.empty()) {
+        phrase.push_back(' ');
+    }
+    phrase += word;
+    state->englishPhraseCurrent_.clear();
+    if (!englishExpansions_.isPhrasePrefix(phrase)) {
+        state->englishPhraseAccepted_ = std::move(phrase);
+        commitEnglishPhrase(inputContext, " ");
+        return;
+    }
+    state->englishPhraseAccepted_ = std::move(phrase);
+    updateEnglishPhraseUI(inputContext);
+}
+
+void PinyinEngine::setEnglishPhrase(InputContext *inputContext,
+                                    const std::string &phrase) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (state->mode_ != PinyinMode::EnglishPhrase) {
+        return;
+    }
+    state->englishPhraseAccepted_ =
+        EnglishExpansionDictionary::normalize(phrase);
+    state->englishPhraseCurrent_.clear();
+    updateEnglishPhraseUI(inputContext);
+}
+
+bool PinyinEngine::startEnglishPhrase(KeyEvent &event) {
+    auto *inputContext = event.inputContext();
+    auto *state = inputContext->propertyFor(&factory_);
+    if (!*config_.englishExpansionEnabled || !*config_.englishPhraseEnabled ||
+        englishExpansions_.empty() || state->mode_ != PinyinMode::Normal ||
+        state->context_.empty() ||
+        !event.key().checkKeyList(*config_.currentCandidate)) {
+        return false;
+    }
+    auto candidateList = inputContext->inputPanel().candidateList();
+    if (!candidateList || candidateList->empty()) {
+        return false;
+    }
+    const int index = std::max(candidateList->cursorIndex(), 0);
+    const auto &candidate = candidateList->candidate(index);
+    if (!dynamic_cast<const SpellCandidateWord *>(&candidate)) {
+        return false;
+    }
+    const auto word = candidate.text().toStringForCommit();
+    if (!englishExpansions_.hasPhraseContinuation(word)) {
+        return false;
+    }
+
+    rewardEnglishPreference(inputContext);
+    state->context_.clear();
+    state->mode_ = PinyinMode::EnglishPhrase;
+    state->englishPhraseAccepted_ = word;
+    state->englishPhraseCurrent_.clear();
+    event.filterAndAccept();
+    updateEnglishPhraseUI(inputContext);
+    return true;
+}
+
+bool PinyinEngine::handleEnglishPhrase(
+    KeyEvent &event, const std::shared_future<uint32_t> &keyChr,
+    const std::shared_future<std::string> &keyStr) {
+    auto *inputContext = event.inputContext();
+    auto *state = inputContext->propertyFor(&factory_);
+    if (state->mode_ != PinyinMode::EnglishPhrase) {
+        return false;
+    }
+
+    if (event.key().states().testAny(
+            KeyStates{KeyState::Ctrl, KeyState::Super})) {
+        commitEnglishPhrase(inputContext);
+        return false;
+    }
+    if (handleCandidateList(event, keyChr)) {
+        return true;
+    }
+    if (event.key().check(FcitxKey_Return) ||
+        event.key().check(FcitxKey_KP_Enter)) {
+        commitEnglishPhrase(inputContext);
+        event.filterAndAccept();
+        return true;
+    }
+    if (event.key().check(FcitxKey_Escape)) {
+        doReset(inputContext);
+        event.filterAndAccept();
+        return true;
+    }
+    if (event.key().check(FcitxKey_BackSpace)) {
+        if (!state->englishPhraseCurrent_.empty()) {
+            state->englishPhraseCurrent_.pop_back();
+        } else if (!state->englishPhraseAccepted_.empty()) {
+            const auto separator = state->englishPhraseAccepted_.rfind(' ');
+            if (separator == std::string::npos) {
+                state->englishPhraseCurrent_ =
+                    std::move(state->englishPhraseAccepted_);
+                state->englishPhraseAccepted_.clear();
+            } else {
+                state->englishPhraseCurrent_ =
+                    state->englishPhraseAccepted_.substr(separator + 1);
+                state->englishPhraseAccepted_.erase(separator);
+            }
+        }
+        if (state->englishPhraseAccepted_.empty() &&
+            state->englishPhraseCurrent_.empty()) {
+            doReset(inputContext);
+        } else {
+            updateEnglishPhraseUI(inputContext);
+        }
+        event.filterAndAccept();
+        return true;
+    }
+
+    const auto character = keyStr.get();
+    if (character.size() == 1 &&
+        isAsciiEnglishPhraseCharacter(character.front())) {
+        state->englishPhraseCurrent_ += character;
+        updateEnglishPhraseUI(inputContext);
+        event.filterAndAccept();
+        return true;
+    }
+
+    if (event.key().check(FcitxKey_semicolon)) {
+        commitEnglishPhrase(inputContext, ";");
+        event.filterAndAccept();
+        return true;
+    }
+    if (character.size() == 1 &&
+        std::string_view(".,!?:").find(character.front()) !=
+            std::string_view::npos) {
+        commitEnglishPhrase(inputContext, character);
+        event.filterAndAccept();
+        return true;
+    }
+
+    commitEnglishPhrase(inputContext);
+    return false;
+}
+
+bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (!*config_.englishExpansionEnabled || englishExpansions_.empty() ||
+        state->predictWords_) {
+        return false;
+    }
+
+    const bool fromPhrase = state->mode_ == PinyinMode::EnglishPhrase;
+    std::string source;
+    size_t selectLength = 0;
+    int sourceIndex = -1;
+    if (fromPhrase) {
+        source = englishPhraseText(*state);
+    } else {
+        if (state->mode_ != PinyinMode::Normal || state->context_.empty()) {
+            return false;
+        }
+        auto candidateList = inputContext->inputPanel().candidateList();
+        if (!candidateList || candidateList->empty()) {
+            return false;
+        }
+        sourceIndex = std::max(candidateList->cursorIndex(), 0);
+        const auto &candidate = candidateList->candidate(sourceIndex);
+        const auto *spellCandidate =
+            dynamic_cast<const SpellCandidateWord *>(&candidate);
+        if (!spellCandidate) {
+            return false;
+        }
+        source = candidate.text().toStringForCommit();
+        selectLength = spellCandidate->selectLength();
+        if (const auto *bulk = candidateList->toBulk()) {
+            for (int index = 0; index < bulk->totalSize(); index++) {
+                if (&bulk->candidateFromAll(index) == &candidate) {
+                    sourceIndex = index;
+                    break;
+                }
+            }
+        }
+    }
+
+    const auto *expansions = englishExpansions_.lookup(source);
+    if (!expansions || expansions->empty()) {
+        return false;
+    }
+
+    auto candidates = std::make_unique<CommonCandidateList>();
+    candidates->setPageSize(*config_.pageSize);
+    candidates->setCursorPositionAfterPaging(
+        CursorPositionAfterPaging::ResetToFirst);
+    const auto maximum =
+        std::min(expansions->size(),
+                 static_cast<size_t>(*config_.englishExpansionMaxCandidates));
+    for (size_t index = 0; index < maximum; index++) {
+        candidates->append<EnglishExpansionCandidateWord>(
+            this, (*expansions)[index].value, (*expansions)[index].label,
+            selectLength, fromPhrase);
+    }
+    candidates->setSelectionKey(selectionKeys_);
+    candidates->setGlobalCursorIndex(0);
+
+    state->englishExpansionMode_ = true;
+    state->englishExpansionFromPhrase_ = fromPhrase;
+    state->englishExpansionSource_ = source;
+    state->englishExpansionSourceIndex_ = sourceIndex;
+    inputContext->inputPanel().setAuxDown(
+        Text(std::format("[英扩] {}", source)));
+    inputContext->inputPanel().setCandidateList(std::move(candidates));
+    inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
+    return true;
+}
+
+void PinyinEngine::leaveEnglishExpansionMode(InputContext *inputContext,
+                                             bool restoreCandidate) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (!state->englishExpansionMode_) {
+        return;
+    }
+    const bool fromPhrase = state->englishExpansionFromPhrase_;
+    auto source = std::move(state->englishExpansionSource_);
+    const int oldIndex = state->englishExpansionSourceIndex_;
+    state->englishExpansionMode_ = false;
+    state->englishExpansionFromPhrase_ = false;
+    state->englishExpansionSource_.clear();
+    state->englishExpansionSourceIndex_ = -1;
+    inputContext->inputPanel().setAuxDown(Text());
+    if (!restoreCandidate) {
+        return;
+    }
+    if (fromPhrase) {
+        updateEnglishPhraseUI(inputContext);
+        return;
+    }
+
+    updateUI(inputContext);
+    auto candidateList = inputContext->inputPanel().candidateList();
+    auto *bulk = candidateList ? candidateList->toBulk() : nullptr;
+    auto *bulkCursor = candidateList ? candidateList->toBulkCursor() : nullptr;
+    if (bulk && bulkCursor && bulk->totalSize() > 0) {
+        int restoreIndex = oldIndex;
+        if (restoreIndex < 0 || restoreIndex >= bulk->totalSize() ||
+            bulk->candidateFromAll(restoreIndex).text().toStringForCommit() !=
+                source) {
+            restoreIndex = 0;
+            for (int index = 0; index < bulk->totalSize(); index++) {
+                if (bulk->candidateFromAll(index).text().toStringForCommit() ==
+                    source) {
+                    restoreIndex = index;
+                    break;
+                }
+            }
+        }
+        bulkCursor->setGlobalCursorIndex(restoreIndex);
+        inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
+    }
+}
+
+bool PinyinEngine::handleEnglishExpansionTrigger(KeyEvent &event) {
+    auto *inputContext = event.inputContext();
+    auto *state = inputContext->propertyFor(&factory_);
+    const bool trigger = event.key().check(*config_.englishExpansionTrigger) &&
+                         !event.isVirtual();
+    if (state->englishExpansionMode_) {
+        if (trigger || event.key().check(FcitxKey_Escape)) {
+            leaveEnglishExpansionMode(inputContext, true);
+            event.filterAndAccept();
+            return true;
+        }
+        return false;
+    }
+    if (trigger && showEnglishExpansionCandidates(inputContext)) {
+        event.filterAndAccept();
+        return true;
+    }
+    return false;
+}
+
+void PinyinEngine::selectEnglishExpansionCandidate(InputContext *inputContext,
+                                                   size_t selectLength,
+                                                   const std::string &word,
+                                                   bool fromPhrase) {
+    leaveEnglishExpansionMode(inputContext, false);
+    if (fromPhrase) {
+        inputContext->commitString(word);
+        doReset(inputContext);
+        return;
+    }
+    auto *state = inputContext->propertyFor(&factory_);
+    auto &context = state->context_;
+    auto segmentLength = context.size() - context.selectedLength();
+    segmentLength = std::min(segmentLength, selectLength);
+    if (segmentLength == 0) {
+        updateUI(inputContext);
+        return;
+    }
+    rewardEnglishPreference(inputContext);
+    context.selectCustom(segmentLength, word);
+    updateUI(inputContext);
 }
 
 bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
@@ -2612,6 +3041,19 @@ void PinyinEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &event) {
     bool lastIsPunc = state->lastIsPunc_;
     state->lastIsPunc_ = false;
 
+    if (handleEnglishExpansionTrigger(event)) {
+        return;
+    }
+    if (state->englishExpansionMode_) {
+        // The temporary page owns selection and navigation. Other input first
+        // restores its underlying word or phrase and is then processed below.
+        if (handleCandidateList(event, keyChr)) {
+            return;
+        }
+        leaveEnglishExpansionMode(inputContext, true);
+        candidateList = inputContext->inputPanel().candidateList();
+    }
+
     if (handleChineseEnglishTrigger(event)) {
         return;
     }
@@ -2626,11 +3068,20 @@ void PinyinEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &event) {
         candidateList = inputContext->inputPanel().candidateList();
     }
 
+    if (state->mode_ == PinyinMode::EnglishPhrase &&
+        handleEnglishPhrase(event, keyChr, keyStr)) {
+        return;
+    }
+
     if (handleStrokeFilter(event, keyChr)) {
         return;
     }
 
     if (handleCompose(event)) {
+        return;
+    }
+
+    if (startEnglishPhrase(event)) {
         return;
     }
 
@@ -2921,6 +3372,12 @@ void PinyinEngine::doReset(InputContext *inputContext) const {
     state->chineseEnglishMode_ = false;
     state->chineseEnglishSource_.clear();
     state->chineseEnglishSourceIndex_ = -1;
+    state->englishExpansionMode_ = false;
+    state->englishExpansionFromPhrase_ = false;
+    state->englishExpansionSource_.clear();
+    state->englishExpansionSourceIndex_ = -1;
+    state->englishPhraseAccepted_.clear();
+    state->englishPhraseCurrent_.clear();
     state->context_.clear();
     state->context_.clearContextWords();
     state->predictWords_.reset();

@@ -444,6 +444,129 @@ void testEnglishFuzzyTranslation(Instance *instance) {
     });
 }
 
+void testEnglishExpansionAndPhrase(Instance *instance) {
+    instance->eventDispatcher().schedule([instance]() {
+        auto *pinyin = instance->addonManager().addon("pinyin");
+        auto *testfrontend = instance->addonManager().addon("testfrontend");
+        auto uuid =
+            testfrontend->call<ITestFrontend::createInputContext>("testapp");
+        auto *ic = instance->inputContextManager().findByUUID(uuid);
+        FCITX_ASSERT(ic);
+        instance->setCurrentInputMethod(ic, "pinyin", true);
+
+        const auto type = [&](std::string_view input) {
+            for (const auto key : input) {
+                testfrontend->call<ITestFrontend::keyEvent>(
+                    uuid, Key(std::string(1, key)), false);
+            }
+        };
+        const auto selectCandidateCursor = [&](std::string_view word) {
+            const auto index = findCandidateOrDie(ic, word);
+            ic->inputPanel()
+                .candidateList()
+                ->toBulkCursor()
+                ->setGlobalCursorIndex(index);
+        };
+        const auto beginAsSoonAsPossible = [&]() {
+            type("as");
+            selectCandidateCursor("as");
+            testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"),
+                                                        false);
+            FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
+                         "[英文短语] as");
+            type("soon");
+            testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"),
+                                                        false);
+            FCITX_ASSERT(findCandidate(ic, "as soon as possible") >= 0);
+            type("as");
+            testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"),
+                                                        false);
+            type("possible");
+        };
+
+        RawConfig config;
+        config.setValueByPath("FuzzyEnglishEnabled", "True");
+        config.setValueByPath("FuzzyEnglishMinLength", "4");
+        config.setValueByPath("FuzzyEnglishPromote", "True");
+        config.setValueByPath("EnglishExpansionEnabled", "True");
+        config.setValueByPath("EnglishExpansionMaxCandidates", "10");
+        config.setValueByPath("EnglishExpansionTrigger", "semicolon");
+        config.setValueByPath("EnglishPhraseEnabled", "True");
+        config.setValueByPath("ChineseEnglishTrigger", "semicolon");
+        config.setValueByPath("QuickPhraseKey", "grave");
+        pinyin->setConfig(config);
+
+        // A full English candidate opens a temporary page where conventional
+        // abbreviations precede derivational and inflectional forms.
+        type("configuration");
+        selectCandidateCursor("configuration");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
+                     "[英扩] configuration");
+        FCITX_ASSERT(findCandidateOrDie(ic, "config") == 0);
+        FCITX_ASSERT(findCandidateOrDie(ic, "cfg") == 1);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(缩·常用)");
+
+        // The trigger toggles back without modifying the English source.
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(findCandidate(ic, "configuration") >= 0);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("config");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+        FCITX_ASSERT(ic->inputPanel().preedit().empty());
+
+        type("decide");
+        selectCandidateCursor("decide");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(findCandidateOrDie(ic, "decision") == 0);
+        FCITX_ASSERT(findCandidateOrDie(ic, "decisive") == 1);
+        FCITX_ASSERT(findCandidate(ic, "deciding") >= 0);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Escape"), false);
+        ic->reset();
+
+        // Space keeps only a known abbreviation phrase in preedit. Semicolon
+        // then replaces the entire phrase without surrounding-text deletion.
+        beginAsSoonAsPossible();
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
+                     "[英扩] as soon as possible");
+        FCITX_ASSERT(findCandidateOrDie(ic, "ASAP") == 0);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(缩·短语)");
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("ASAP");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+
+        // Return retains the long phrase, while diverging from every known
+        // prefix falls back to ordinary word-and-space commit behavior.
+        beginAsSoonAsPossible();
+        testfrontend->call<ITestFrontend::pushCommitExpectation>(
+            "as soon as possible");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Return"), false);
+
+        type("as");
+        selectCandidateCursor("as");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+        type("usual");
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("as usual ");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+
+        RawConfig resetConfig;
+        resetConfig.setValueByPath("FuzzyEnglishEnabled", "False");
+        resetConfig.setValueByPath("FuzzyEnglishPromote", "False");
+        resetConfig.setValueByPath("EnglishExpansionEnabled", "False");
+        pinyin->setConfig(resetConfig);
+    });
+}
+
 void testOnDemandChineseEnglish(Instance *instance) {
     instance->eventDispatcher().schedule([instance]() {
         auto *pinyin = instance->addonManager().addon("pinyin");
@@ -969,6 +1092,7 @@ int main() {
     testSelectByChar(&instance);
     testUppercase(&instance);
     testEnglishFuzzyTranslation(&instance);
+    testEnglishExpansionAndPhrase(&instance);
     testOnDemandChineseEnglish(&instance);
     testForget(&instance);
     testActionInStrokeFilter(&instance);
