@@ -7,6 +7,7 @@
 #define _PINYIN_CHINESEENGLISH_H_
 
 #include <cstddef>
+#include <functional>
 #include <istream>
 #include <string>
 #include <string_view>
@@ -14,6 +15,13 @@
 #include <vector>
 
 namespace fcitx {
+
+struct ChineseEnglishMatch {
+    const std::vector<std::string> *candidates = nullptr;
+    std::string matchedChinese;
+
+    explicit operator bool() const { return candidates != nullptr; }
+};
 
 /**
  * An optional, local Chinese-to-English candidate dictionary.
@@ -34,9 +42,17 @@ public:
     size_t size() const { return translations_.size(); }
 
     const std::vector<std::string> *lookup(std::string_view chinese) const;
+    ChineseEnglishMatch lookupBest(std::string_view chinese) const;
 
 private:
-    std::unordered_map<std::string, std::vector<std::string>> translations_;
+    struct StringHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view value) const noexcept;
+    };
+
+    std::unordered_map<std::string, std::vector<std::string>, StringHash,
+                       std::equal_to<>>
+        translations_;
 };
 
 } // namespace fcitx

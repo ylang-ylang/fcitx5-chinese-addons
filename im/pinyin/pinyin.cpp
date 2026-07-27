@@ -1665,7 +1665,7 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
     auto *pinyinCandidate =
         dynamic_cast<const PinyinAbstractCandidateWord *>(sourceCandidate);
     auto source = sourceCandidate->text().toStringForCommit();
-    const auto *translations = chineseEnglishTranslations_.lookup(source);
+    auto translationMatch = chineseEnglishTranslations_.lookupBest(source);
 
     // A position-1 Cloud Pinyin loading placeholder is not a meaningful
     // highlighted candidate. Fall back only in this specific case to the first
@@ -1673,8 +1673,7 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
     // trigger key's original punctuation behavior.
     const auto *cloudCandidate =
         dynamic_cast<const CustomCloudPinyinCandidateWord *>(sourceCandidate);
-    if ((!translations || translations->empty()) && cloudCandidate &&
-        !cloudCandidate->filled()) {
+    if (!translationMatch && cloudCandidate && !cloudCandidate->filled()) {
         for (int index = 0; index < candidateList->size(); index++) {
             const auto &candidate = candidateList->candidate(index);
             const auto *nativeCandidate =
@@ -1683,19 +1682,19 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
                 continue;
             }
             auto nativeSource = candidate.text().toStringForCommit();
-            const auto *nativeTranslations =
-                chineseEnglishTranslations_.lookup(nativeSource);
-            if (nativeTranslations && !nativeTranslations->empty()) {
+            auto nativeMatch =
+                chineseEnglishTranslations_.lookupBest(nativeSource);
+            if (nativeMatch) {
                 sourceCandidate = &candidate;
                 pinyinCandidate = nativeCandidate;
                 source = std::move(nativeSource);
-                translations = nativeTranslations;
+                translationMatch = std::move(nativeMatch);
                 break;
             }
         }
     }
     if (!pinyinCandidate || pinyinCandidate->selectLength() == 0 ||
-        !translations || translations->empty()) {
+        !translationMatch) {
         return false;
     }
 
@@ -1704,12 +1703,12 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
     englishCandidates->setCursorPositionAfterPaging(
         CursorPositionAfterPaging::ResetToFirst);
     const auto maximum =
-        std::min(translations->size(),
+        std::min(translationMatch.candidates->size(),
                  static_cast<size_t>(*config_.chineseEnglishMaxCandidates));
     for (size_t index = 0; index < maximum; index++) {
         englishCandidates->append<ChineseEnglishCandidateWord>(
-            this, (*translations)[index], source,
-            pinyinCandidate->selectLength());
+            this, (*translationMatch.candidates)[index],
+            translationMatch.matchedChinese, pinyinCandidate->selectLength());
     }
     englishCandidates->setSelectionKey(selectionKeys_);
     englishCandidates->setGlobalCursorIndex(0);
@@ -1725,7 +1724,11 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
             }
         }
     }
-    inputPanel.setAuxDown(Text(std::format("[英译] {}", source)));
+    inputPanel.setAuxDown(
+        Text(source == translationMatch.matchedChinese
+                 ? std::format("[英译] {}", source)
+                 : std::format("[英译] {} → {}", source,
+                               translationMatch.matchedChinese)));
     inputPanel.setCandidateList(std::move(englishCandidates));
     inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
     return true;
