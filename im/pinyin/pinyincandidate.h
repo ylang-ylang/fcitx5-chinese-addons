@@ -199,6 +199,19 @@ private:
     std::string word_;
 };
 
+class ChineseEnglishCandidateWord : public CandidateWord {
+public:
+    ChineseEnglishCandidateWord(PinyinEngine *engine, std::string word,
+                                std::string sourceChinese, size_t selectLength);
+
+    void select(InputContext *inputContext) const override;
+
+private:
+    PinyinEngine *engine_;
+    std::string word_;
+    size_t selectLength_;
+};
+
 class PinyinCandidateWord : public PinyinAbstractCandidateWord,
                             public InsertableAsCustomPhraseInterface,
                             public PinyinCandidateIndexInterface {

@@ -444,6 +444,94 @@ void testEnglishFuzzyTranslation(Instance *instance) {
     });
 }
 
+void testOnDemandChineseEnglish(Instance *instance) {
+    instance->eventDispatcher().schedule([instance]() {
+        auto *pinyin = instance->addonManager().addon("pinyin");
+        auto *testfrontend = instance->addonManager().addon("testfrontend");
+        auto uuid =
+            testfrontend->call<ITestFrontend::createInputContext>("testapp");
+        auto *ic = instance->inputContextManager().findByUUID(uuid);
+        FCITX_ASSERT(ic);
+        instance->setCurrentInputMethod(ic, "pinyin", true);
+
+        const auto type = [&](std::string_view input) {
+            for (const auto key : input) {
+                testfrontend->call<ITestFrontend::keyEvent>(
+                    uuid, Key(std::string(1, key)), false);
+            }
+        };
+
+        RawConfig config;
+        config.setValueByPath("ChineseEnglishEnabled", "True");
+        config.setValueByPath("ChineseEnglishMaxCandidates", "5");
+        config.setValueByPath("ChineseEnglishTrigger", "semicolon");
+        config.setValueByPath("QuickPhraseKey", "grave");
+        pinyin->setConfig(config);
+
+        type("ceshi");
+        const auto testingIndex = findCandidateOrDie(ic, "测试");
+        ic->inputPanel().candidateList()->toBulkCursor()->setGlobalCursorIndex(
+            testingIndex);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() == "[英译] 测试");
+        FCITX_ASSERT(findCandidateOrDie(ic, "test") == 0);
+        FCITX_ASSERT(findCandidateOrDie(ic, "examine") == 1);
+        FCITX_ASSERT(findCandidate(ic, "测试") < 0);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(英译·测试)");
+
+        // The trigger toggles back and restores the highlighted source.
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(findCandidateOrDie(ic, "测试") == testingIndex);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulkCursor()
+                         ->globalCursorIndex() == testingIndex);
+
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Escape"), false);
+        FCITX_ASSERT(findCandidate(ic, "测试") >= 0);
+
+        // Selecting the temporary candidate consumes the same Pinyin segment
+        // but commits only the English text.
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("test");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+        FCITX_ASSERT(ic->inputPanel().preedit().empty());
+
+        // Lookup starts from the Chinese candidate, so Xiaohe input uses the
+        // same trigger and consumes the original Shuangpin segment length.
+        config.setValueByPath("ShuangpinProfile", "Xiaohe");
+        pinyin->setConfig(config);
+        instance->setCurrentInputMethod(ic, "shuangpin", true);
+        type("ceui");
+        const auto shuangpinTestingIndex = findCandidateOrDie(ic, "测试");
+        ic->inputPanel().candidateList()->toBulkCursor()->setGlobalCursorIndex(
+            shuangpinTestingIndex);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("test");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
+        FCITX_ASSERT(ic->inputPanel().preedit().empty());
+
+        // A dictionary miss falls through to the ordinary punctuation path.
+        instance->setCurrentInputMethod(ic, "pinyin", true);
+        type("nihao");
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("你好");
+        testfrontend->call<ITestFrontend::pushCommitExpectation>("；");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().preedit().empty());
+
+        RawConfig resetConfig;
+        resetConfig.setValueByPath("ChineseEnglishEnabled", "False");
+        resetConfig.setValueByPath("QuickPhraseKey", "semicolon");
+        pinyin->setConfig(resetConfig);
+    });
+}
+
 void testForget(Instance *instance) {
     instance->eventDispatcher().schedule([instance]() {
         auto *testfrontend = instance->addonManager().addon("testfrontend");
@@ -867,6 +955,7 @@ int main() {
     testSelectByChar(&instance);
     testUppercase(&instance);
     testEnglishFuzzyTranslation(&instance);
+    testOnDemandChineseEnglish(&instance);
     testForget(&instance);
     testActionInStrokeFilter(&instance);
     testPinyinTabFilter(&instance);

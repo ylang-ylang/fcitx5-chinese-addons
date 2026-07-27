@@ -1,5 +1,6 @@
 set(PINYIN_SOURCES
     pinyin.cpp
+    chineseenglish.cpp
     customphrase.cpp
     englishpreference.cpp
     englishtranslation.cpp
