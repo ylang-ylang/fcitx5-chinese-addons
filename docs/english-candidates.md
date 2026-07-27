@@ -101,9 +101,12 @@ Its ordered format is:
 用户\tuser
 ```
 
-The maintained local generator uses CC-CEDICT plus a small curated override
-layer. Lookup is exact and local; the normal candidate path does no reverse
-translation work until the trigger is pressed.
+The maintained local generator combines CC-CEDICT with a reverse index of the
+already filtered ECDICT English-to-Chinese meanings, then applies a small
+curated override layer. This covers direct words hidden inside explanatory
+CC-CEDICT glosses, such as `鹰 -> eagle/hawk`, without importing ECDICT's raw
+unfiltered rows. Lookup is exact and local; the normal candidate path does no
+reverse translation work until the trigger is pressed.
 
 Because upstream Pinyin uses semicolon for Quick Phrase by default, users who
 choose semicolon as the translation trigger should move `QuickPhraseKey` to an
