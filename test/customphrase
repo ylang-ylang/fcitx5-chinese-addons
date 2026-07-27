@@ -1,3 +1,6 @@
 # Competing position-1 candidates used to test forced English promotion.
+# The exact English row verifies that expansion lookup also accepts maintained
+# customphrase candidates, not only native spell candidates.
+configuration,1=configuration
 code,1=云代码
 user,1=云用户
