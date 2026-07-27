@@ -61,6 +61,54 @@ LibIME data at:
 The history is a small text file capped at 4096 entries. It never modifies
 `user.dict` or `user.history`.
 
+## On-demand Chinese-to-English candidates
+
+```ini
+ChineseEnglishEnabled=True
+ChineseEnglishMaxCandidates=5
+ChineseEnglishTrigger=semicolon
+```
+
+With an active Pinyin composition, the trigger looks up the currently
+highlighted Chinese candidate and temporarily replaces the candidate page with
+ordered English words or short phrases. For example, highlight `测试` and press
+`;` to show:
+
+```text
+test       (英译·测试)
+beta       (英译·测试)
+```
+
+Space and the normal selection keys choose an English candidate. Press `;` or
+Escape to restore the Chinese page; any other non-candidate key restores the
+Chinese page before the key is processed. A dictionary miss falls through to
+the key's original behavior. Selecting an English result consumes the same
+Pinyin or Shuangpin segment as its source candidate and commits only the English
+text.
+
+Install the generated UTF-8 dictionary at:
+
+```text
+~/.local/share/fcitx5/pinyin/chinese-english.dict
+```
+
+Its ordered format is:
+
+```text
+# chinese<TAB>English candidate
+测试\ttest
+测试\tbeta
+用户\tuser
+```
+
+The maintained local generator uses CC-CEDICT plus a small curated override
+layer. Lookup is exact and local; the normal candidate path does no reverse
+translation work until the trigger is pressed.
+
+Because upstream Pinyin uses semicolon for Quick Phrase by default, users who
+choose semicolon as the translation trigger should move `QuickPhraseKey` to an
+unused key. This setup uses `grave` while leaving its stroke-filter key empty.
+
 ## Concise English meanings
 
 Set:

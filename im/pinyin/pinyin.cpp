@@ -59,6 +59,7 @@
 #include <fcitx/userinterfacemanager.h>
 #include <fcntl.h>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <future>
@@ -523,6 +524,9 @@ void PinyinEngine::updatePuncCandidate(
 
 void PinyinEngine::updateUI(InputContext *inputContext) {
     auto *state = inputContext->propertyFor(&factory_);
+    if (state->chineseEnglishMode_) {
+        return;
+    }
     if (state->mode_ == PinyinMode::StrokeFilter) {
         resetStroke(inputContext);
     }
@@ -1200,6 +1204,38 @@ void PinyinEngine::loadEnglishTranslations() {
     }
 }
 
+void PinyinEngine::loadChineseEnglishTranslations() {
+    chineseEnglishTranslations_.clear();
+    if (!*config_.chineseEnglishEnabled) {
+        return;
+    }
+
+    const auto &standardPath = StandardPaths::global();
+    auto file = standardPath.open(StandardPathsType::PkgData,
+                                  "pinyin/chinese-english.dict");
+    if (!file.isValid()) {
+        return;
+    }
+
+    try {
+        IFDStreamBuf buffer(file.fd());
+        std::istream in(&buffer);
+        if (!chineseEnglishTranslations_.load(in)) {
+            PINYIN_ERROR()
+                << "Failed to read Chinese-to-English candidate dictionary.";
+            chineseEnglishTranslations_.clear();
+        } else {
+            PINYIN_DEBUG() << "Loaded " << chineseEnglishTranslations_.size()
+                           << " Chinese-to-English candidate entries.";
+        }
+    } catch (const std::exception &e) {
+        chineseEnglishTranslations_.clear();
+        PINYIN_ERROR()
+            << "Failed to load Chinese-to-English candidate dictionary: "
+            << e.what();
+    }
+}
+
 void PinyinEngine::loadEnglishPreferences() {
     englishPreferences_.clear();
     const auto &standardPath = StandardPaths::global();
@@ -1454,6 +1490,7 @@ void PinyinEngine::reloadConfig() {
     readAsIni(config_, "conf/pinyin.conf");
     populateConfig();
     loadEnglishTranslations();
+    loadChineseEnglishTranslations();
 }
 void PinyinEngine::activate(const fcitx::InputMethodEntry &entry,
                             fcitx::InputContextEvent &event) {
@@ -1602,6 +1639,173 @@ bool PinyinEngine::handleCloudpinyinTrigger(KeyEvent &event) {
         return true;
     }
     return false;
+}
+
+bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (!*config_.chineseEnglishEnabled ||
+        chineseEnglishTranslations_.empty() ||
+        state->mode_ != PinyinMode::Normal || state->predictWords_ ||
+        state->context_.empty()) {
+        return false;
+    }
+
+    auto &inputPanel = inputContext->inputPanel();
+    auto candidateList = inputPanel.candidateList();
+    if (!candidateList || candidateList->empty()) {
+        return false;
+    }
+    const int cursorIndex = std::max(candidateList->cursorIndex(), 0);
+    if (cursorIndex >= candidateList->size()) {
+        return false;
+    }
+
+    const CandidateWord *sourceCandidate =
+        &candidateList->candidate(cursorIndex);
+    auto *pinyinCandidate =
+        dynamic_cast<const PinyinAbstractCandidateWord *>(sourceCandidate);
+    auto source = sourceCandidate->text().toStringForCommit();
+    const auto *translations = chineseEnglishTranslations_.lookup(source);
+
+    // A position-1 Cloud Pinyin loading placeholder is not a meaningful
+    // highlighted candidate. Fall back only in this specific case to the first
+    // native Pinyin candidate; an ordinary dictionary miss must retain the
+    // trigger key's original punctuation behavior.
+    const auto *cloudCandidate =
+        dynamic_cast<const CustomCloudPinyinCandidateWord *>(sourceCandidate);
+    if ((!translations || translations->empty()) && cloudCandidate &&
+        !cloudCandidate->filled()) {
+        for (int index = 0; index < candidateList->size(); index++) {
+            const auto &candidate = candidateList->candidate(index);
+            const auto *nativeCandidate =
+                dynamic_cast<const PinyinCandidateWord *>(&candidate);
+            if (!nativeCandidate) {
+                continue;
+            }
+            auto nativeSource = candidate.text().toStringForCommit();
+            const auto *nativeTranslations =
+                chineseEnglishTranslations_.lookup(nativeSource);
+            if (nativeTranslations && !nativeTranslations->empty()) {
+                sourceCandidate = &candidate;
+                pinyinCandidate = nativeCandidate;
+                source = std::move(nativeSource);
+                translations = nativeTranslations;
+                break;
+            }
+        }
+    }
+    if (!pinyinCandidate || pinyinCandidate->selectLength() == 0 ||
+        !translations || translations->empty()) {
+        return false;
+    }
+
+    auto englishCandidates = std::make_unique<CommonCandidateList>();
+    englishCandidates->setPageSize(*config_.pageSize);
+    englishCandidates->setCursorPositionAfterPaging(
+        CursorPositionAfterPaging::ResetToFirst);
+    const auto maximum =
+        std::min(translations->size(),
+                 static_cast<size_t>(*config_.chineseEnglishMaxCandidates));
+    for (size_t index = 0; index < maximum; index++) {
+        englishCandidates->append<ChineseEnglishCandidateWord>(
+            this, (*translations)[index], source,
+            pinyinCandidate->selectLength());
+    }
+    englishCandidates->setSelectionKey(selectionKeys_);
+    englishCandidates->setGlobalCursorIndex(0);
+
+    state->chineseEnglishMode_ = true;
+    state->chineseEnglishSource_ = source;
+    state->chineseEnglishSourceIndex_ = cursorIndex;
+    if (const auto *bulk = candidateList->toBulk()) {
+        for (int index = 0; index < bulk->totalSize(); index++) {
+            if (&bulk->candidateFromAll(index) == sourceCandidate) {
+                state->chineseEnglishSourceIndex_ = index;
+                break;
+            }
+        }
+    }
+    inputPanel.setAuxDown(Text(std::format("[英译] {}", source)));
+    inputPanel.setCandidateList(std::move(englishCandidates));
+    inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
+    return true;
+}
+
+void PinyinEngine::leaveChineseEnglishMode(InputContext *inputContext,
+                                           bool restoreCandidate) {
+    auto *state = inputContext->propertyFor(&factory_);
+    if (!state->chineseEnglishMode_) {
+        return;
+    }
+
+    auto source = std::move(state->chineseEnglishSource_);
+    const int oldIndex = state->chineseEnglishSourceIndex_;
+    state->chineseEnglishMode_ = false;
+    state->chineseEnglishSource_.clear();
+    state->chineseEnglishSourceIndex_ = -1;
+    inputContext->inputPanel().setAuxDown(Text());
+    if (!restoreCandidate) {
+        return;
+    }
+
+    updateUI(inputContext);
+    auto candidateList = inputContext->inputPanel().candidateList();
+    auto *bulk = candidateList ? candidateList->toBulk() : nullptr;
+    auto *bulkCursor = candidateList ? candidateList->toBulkCursor() : nullptr;
+    if (bulk && bulkCursor && bulk->totalSize() > 0) {
+        int restoreIndex = oldIndex;
+        if (restoreIndex < 0 || restoreIndex >= bulk->totalSize() ||
+            bulk->candidateFromAll(restoreIndex).text().toStringForCommit() !=
+                source) {
+            restoreIndex = 0;
+            for (int index = 0; index < bulk->totalSize(); index++) {
+                if (bulk->candidateFromAll(index).text().toStringForCommit() ==
+                    source) {
+                    restoreIndex = index;
+                    break;
+                }
+            }
+        }
+        bulkCursor->setGlobalCursorIndex(restoreIndex);
+        inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
+    }
+}
+
+bool PinyinEngine::handleChineseEnglishTrigger(KeyEvent &event) {
+    auto *inputContext = event.inputContext();
+    auto *state = inputContext->propertyFor(&factory_);
+    const bool trigger =
+        event.key().check(*config_.chineseEnglishTrigger) && !event.isVirtual();
+    if (state->chineseEnglishMode_) {
+        if (trigger || event.key().check(FcitxKey_Escape)) {
+            leaveChineseEnglishMode(inputContext, true);
+            event.filterAndAccept();
+            return true;
+        }
+        return false;
+    }
+
+    if (trigger && showChineseEnglishCandidates(inputContext)) {
+        event.filterAndAccept();
+        return true;
+    }
+    return false;
+}
+
+void PinyinEngine::selectChineseEnglishCandidate(InputContext *inputContext,
+                                                 size_t selectLength,
+                                                 const std::string &word) {
+    leaveChineseEnglishMode(inputContext, false);
+    auto *state = inputContext->propertyFor(&factory_);
+    auto &context = state->context_;
+    auto segmentLength = context.size() - context.selectedLength();
+    segmentLength = std::min(segmentLength, selectLength);
+    if (segmentLength == 0) {
+        updateUI(inputContext);
+        return;
+    }
+    context.selectCustom(segmentLength, word);
+    updateUI(inputContext);
 }
 
 bool PinyinEngine::handle2nd3rdSelection(KeyEvent &event) {
@@ -2309,6 +2513,20 @@ void PinyinEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &event) {
     bool lastIsPunc = state->lastIsPunc_;
     state->lastIsPunc_ = false;
 
+    if (handleChineseEnglishTrigger(event)) {
+        return;
+    }
+    if (state->chineseEnglishMode_) {
+        // Candidate selection and navigation operate on the temporary English
+        // list. Any other key first returns to the unchanged Pinyin context and
+        // is then handled normally below.
+        if (handleCandidateList(event, keyChr)) {
+            return;
+        }
+        leaveChineseEnglishMode(inputContext, true);
+        candidateList = inputContext->inputPanel().candidateList();
+    }
+
     if (handleStrokeFilter(event, keyChr)) {
         return;
     }
@@ -2601,6 +2819,9 @@ void PinyinEngine::doReset(InputContext *inputContext) const {
     resetStroke(inputContext);
     resetForgetCandidate(inputContext);
     state->mode_ = PinyinMode::Normal;
+    state->chineseEnglishMode_ = false;
+    state->chineseEnglishSource_.clear();
+    state->chineseEnglishSourceIndex_ = -1;
     state->context_.clear();
     state->context_.clearContextWords();
     state->predictWords_.reset();

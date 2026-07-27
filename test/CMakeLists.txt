@@ -30,6 +30,9 @@ add_test(NAME testchttrans COMMAND testchttrans)
 
 add_subdirectory(addon)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/pinyin")
+configure_file(chinese-english.dict
+               "${CMAKE_CURRENT_BINARY_DIR}/pinyin/chinese-english.dict"
+               COPYONLY)
 configure_file(english-translation.dict
                "${CMAKE_CURRENT_BINARY_DIR}/pinyin/english-translation.dict"
                COPYONLY)
@@ -75,6 +78,11 @@ add_executable(testenglishtranslation testenglishtranslation.cpp
                ../im/pinyin/englishtranslation.cpp)
 target_link_libraries(testenglishtranslation Fcitx5::Utils)
 add_test(NAME testenglishtranslation COMMAND testenglishtranslation)
+
+add_executable(testchineseenglish testchineseenglish.cpp
+               ../im/pinyin/chineseenglish.cpp)
+target_link_libraries(testchineseenglish Fcitx5::Utils)
+add_test(NAME testchineseenglish COMMAND testchineseenglish)
 
 add_executable(testenglishpreference testenglishpreference.cpp
                ../im/pinyin/englishpreference.cpp)

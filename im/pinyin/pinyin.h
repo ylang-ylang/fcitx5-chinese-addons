@@ -7,6 +7,7 @@
 #ifndef _PINYIN_PINYIN_H_
 #define _PINYIN_PINYIN_H_
 
+#include "chineseenglish.h"
 #include "customphrase.h"
 #include "englishpreference.h"
 #include "englishtranslation.h"
@@ -199,6 +200,16 @@ FCITX_CONFIGURATION(
     Option<int, IntConstrain> englishTranslationMaxMeanings{
         this, "EnglishTranslationMaxMeanings",
         _("Maximum English meaning groups"), 3, IntConstrain(1, 3)};
+    Option<bool> chineseEnglishEnabled{
+        this, "ChineseEnglishEnabled",
+        _("Enable on-demand Chinese-to-English candidates"), false};
+    Option<int, IntConstrain> chineseEnglishMaxCandidates{
+        this, "ChineseEnglishMaxCandidates",
+        _("Maximum on-demand English candidates"), 5, IntConstrain(1, 10)};
+    Option<Key, KeyConstrain> chineseEnglishTrigger{
+        this, "ChineseEnglishTrigger",
+        _("Key to show English translations of the current Chinese candidate"),
+        Key(";"), KeyConstrain{KeyConstrainFlag::AllowModifierLess}};
     Option<bool> symbolsEnabled{this, "SymbolsEnabled",
                                 _("Show symbol candidates"), true};
     Option<bool> chaiziEnabled{this, "ChaiziEnabled",
@@ -424,6 +435,10 @@ public:
     int keyReleased_ = -1;
     int keyReleasedIndex_ = -2;
     uint64_t lastKeyPressedTime_ = 0;
+
+    bool chineseEnglishMode_ = false;
+    std::string chineseEnglishSource_;
+    int chineseEnglishSourceIndex_ = -1;
 };
 
 class PinyinEngine final : public InputMethodEngineV3,
@@ -457,6 +472,7 @@ public:
         safeSaveAsIni(config_, "conf/pinyin.conf");
         populateConfig();
         loadEnglishTranslations();
+        loadChineseEnglishTranslations();
     }
 
     void setSubConfig(const std::string &path,
@@ -482,6 +498,9 @@ public:
     void rewardEnglishPreference(InputContext *inputContext);
     void penalizeEnglishPreference(InputContext *inputContext,
                                    size_t selectLength);
+    void selectChineseEnglishCandidate(InputContext *inputContext,
+                                       size_t selectLength,
+                                       const std::string &word);
 
     FCITX_ADDON_DEPENDENCY_LOADER(cloudpinyin, instance_->addonManager());
 
@@ -493,6 +512,10 @@ private:
                              const std::string &word);
 
     bool handleCloudpinyinTrigger(KeyEvent &event);
+    bool handleChineseEnglishTrigger(KeyEvent &event);
+    bool showChineseEnglishCandidates(InputContext *inputContext);
+    void leaveChineseEnglishMode(InputContext *inputContext,
+                                 bool restoreCandidate);
     bool handle2nd3rdSelection(KeyEvent &event);
     bool handleCandidateList(KeyEvent &event,
                              const std::shared_future<uint32_t> &keyChr);
@@ -520,6 +543,7 @@ private:
 
     void populateConfig();
     void loadEnglishTranslations();
+    void loadChineseEnglishTranslations();
     void loadEnglishPreferences();
     void saveEnglishPreferences();
     bool learnedEnglishPreference(std::string_view input) const;
@@ -562,6 +586,7 @@ private:
     std::unique_ptr<EventSource> deferredEnglishPreferenceSave_;
     std::unique_ptr<HandlerTableEntry<EventHandler>> event_;
     CustomPhraseDict customPhrase_;
+    ChineseEnglishDictionary chineseEnglishTranslations_;
     EnglishPreferenceHistory englishPreferences_;
     EnglishTranslationDictionary englishTranslations_;
     SymbolDict symbols_;

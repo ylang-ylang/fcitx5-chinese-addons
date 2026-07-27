@@ -307,6 +307,18 @@ void SpellCandidateWord::select(InputContext *inputContext) const {
     engine_->updateUI(inputContext);
 }
 
+ChineseEnglishCandidateWord::ChineseEnglishCandidateWord(
+    PinyinEngine *engine, std::string word, std::string sourceChinese,
+    size_t selectLength)
+    : engine_(engine), word_(std::move(word)), selectLength_(selectLength) {
+    setText(Text(word_));
+    setComment(Text(std::format("(英译·{})", sourceChinese)));
+}
+
+void ChineseEnglishCandidateWord::select(InputContext *inputContext) const {
+    engine_->selectChineseEnglishCandidate(inputContext, selectLength_, word_);
+}
+
 PinyinCandidateWord::PinyinCandidateWord(PinyinEngine *engine,
                                          InputContext *inputContext, Text text,
                                          size_t selectLength, size_t idx,
