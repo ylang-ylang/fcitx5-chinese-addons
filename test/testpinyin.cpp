@@ -517,8 +517,22 @@ void testOnDemandChineseEnglish(Instance *instance) {
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
         FCITX_ASSERT(ic->inputPanel().preedit().empty());
 
-        // A dictionary miss falls through to the ordinary punctuation path.
+        // Productive particles use a lexical fallback instead of requiring a
+        // generated entry for every surface form.
         instance->setCurrentInputMethod(ic, "pinyin", true);
+        type("kexuande");
+        const auto optionalIndex = findCandidateOrDie(ic, "可选的");
+        ic->inputPanel().candidateList()->toBulkCursor()->setGlobalCursorIndex(
+            optionalIndex);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
+                     "[英译] 可选的 → 可选");
+        FCITX_ASSERT(findCandidateOrDie(ic, "available") == 0);
+        FCITX_ASSERT(findCandidateOrDie(ic, "optional") == 1);
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Escape"), false);
+        ic->reset();
+
+        // A dictionary miss falls through to the ordinary punctuation path.
         type("nihao");
         testfrontend->call<ITestFrontend::pushCommitExpectation>("你好");
         testfrontend->call<ITestFrontend::pushCommitExpectation>("；");

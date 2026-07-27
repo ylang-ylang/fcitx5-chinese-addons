@@ -104,9 +104,12 @@ Its ordered format is:
 The maintained local generator combines CC-CEDICT with a reverse index of the
 already filtered ECDICT English-to-Chinese meanings, then applies a small
 curated override layer. This covers direct words hidden inside explanatory
-CC-CEDICT glosses, such as `鹰 -> eagle/hawk`, without importing ECDICT's raw
-unfiltered rows. Lookup is exact and local; the normal candidate path does no
-reverse translation work until the trigger is pressed.
+CC-CEDICT glosses, such as `鹰 -> eagle/hawk`, without importing ECDICT's raw unfiltered rows. Lookup is local and runs only after the trigger:
+it first tries the exact candidate, then strips a short chain of productive
+particles (`的`, `地`, `得`, `们`, `了`, `过`, `着`, `中`), and finally tries
+the longest dictionary span inside the candidate. Thus `可选的` reuses the
+entry for `可选`, while exact entries always retain priority. The normal
+candidate path performs none of this reverse-translation work.
 
 Because upstream Pinyin uses semicolon for Quick Phrase by default, users who
 choose semicolon as the translation trigger should move `QuickPhraseKey` to an
