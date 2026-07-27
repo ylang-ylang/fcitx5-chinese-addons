@@ -2,6 +2,7 @@ set(PINYIN_SOURCES
     pinyin.cpp
     chineseenglish.cpp
     customphrase.cpp
+    englishexpansion.cpp
     englishpreference.cpp
     englishtranslation.cpp
     symboldictionary.cpp

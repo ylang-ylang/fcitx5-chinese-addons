@@ -199,6 +199,46 @@ private:
     std::string word_;
 };
 
+class EnglishExpansionCandidateWord : public CandidateWord {
+public:
+    EnglishExpansionCandidateWord(PinyinEngine *engine, std::string word,
+                                  std::string label, size_t selectLength,
+                                  bool fromPhrase);
+
+    void select(InputContext *inputContext) const override;
+
+private:
+    PinyinEngine *engine_;
+    std::string word_;
+    size_t selectLength_;
+    bool fromPhrase_;
+};
+
+class EnglishPhraseWordCandidateWord : public CandidateWord {
+public:
+    EnglishPhraseWordCandidateWord(PinyinEngine *engine, std::string word,
+                                   std::string comment = {});
+
+    void select(InputContext *inputContext) const override;
+
+private:
+    PinyinEngine *engine_;
+    std::string word_;
+};
+
+class EnglishPhraseCompletionCandidateWord : public CandidateWord {
+public:
+    EnglishPhraseCompletionCandidateWord(PinyinEngine *engine,
+                                         std::string phrase,
+                                         std::string abbreviation);
+
+    void select(InputContext *inputContext) const override;
+
+private:
+    PinyinEngine *engine_;
+    std::string phrase_;
+};
+
 class ChineseEnglishCandidateWord : public CandidateWord {
 public:
     ChineseEnglishCandidateWord(PinyinEngine *engine, std::string word,
