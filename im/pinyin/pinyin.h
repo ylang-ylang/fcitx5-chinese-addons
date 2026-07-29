@@ -203,7 +203,8 @@ FCITX_CONFIGURATION(
         _("Maximum English meaning groups"), 3, IntConstrain(1, 3)};
     Option<bool> englishPhoneticEnabled{
         this, "EnglishPhoneticEnabled",
-        _("Show phonetics in on-demand English candidate pages"), true};
+        _("Show the selected English word's phonetic on its expansion page"),
+        true};
     Option<bool> englishExpansionEnabled{
         this, "EnglishExpansionEnabled",
         _("Enable on-demand English word and phrase expansions"), false};

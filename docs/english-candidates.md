@@ -68,6 +68,7 @@ EnglishExpansionEnabled=True
 EnglishExpansionMaxCandidates=10
 EnglishExpansionTrigger=semicolon
 EnglishPhraseEnabled=True
+EnglishPhoneticEnabled=True
 ```
 
 When the highlighted source is an English spell candidate, the trigger opens a
@@ -79,14 +80,24 @@ families, and inflections:
 [英扩] configuration
 config          (缩·常用)
 cfg             (缩·代码)
-configure       (派生·动；音标 /kәn'figә/)
+configure       (派生·动)
 configurational (派生·形)
 configurations  (复数)
 ```
 
+The page title shows one phonetic: that of the selected English source word,
+not every expansion candidate. For example, a word without lexical expansions
+can still open a minimal page when its dictionary entry has a phonetic:
+
+```text
+[英扩] persistent　音标 /pəˈsɪstənt/
+persistent      (原词)
+```
+
 Space or a selection key commits the expansion. Semicolon or Escape restores
 the original English candidate. Normal Pinyin and Shuangpin behavior is used
-when the highlighted candidate is not English or the dictionary has no entry.
+when the highlighted candidate is not English or neither an expansion nor a
+phonetic is available.
 
 The same dictionary identifies a deliberately small set of abbreviation
 phrases. Selecting an English word with Space starts phrase composition only
@@ -141,8 +152,8 @@ ordered English words or short phrases. For example, highlight `测试` and pres
 `;` to show:
 
 ```text
-test       (英译·测试；音标 /test/)
-beta       (英译·测试；音标 /'beitә/)
+test       (英译·测试)
+beta       (英译·测试)
 ```
 
 Space and the normal selection keys choose an English candidate. Press `;` or
@@ -220,16 +231,18 @@ patch       (计. 补丁/修补；n. 片/补缀；v. 补缀/掩饰)
 ```
 
 Selecting these candidates commits only the English word. The optional
-phonetic field is shown on the temporary `[英译]` and `[英扩]` semicolon pages;
-it does not add text to the committed candidate. It only needs to appear on one
-row for a word. Lookup is case-insensitive. Repeated rows for one word are
-collected in file order; identical rows are ignored, and legacy two-column
-lines are accepted without a
-label. The file is loaded only while meanings are enabled; restart Fcitx5 after
-an external updater replaces it.
+phonetic field is shown once in the temporary `[英扩]` page title for the
+selected source word; it is not repeated beside every expansion and does not
+add text to the committed candidate. It only needs to appear on one row for a
+word. Lookup is case-insensitive. Repeated rows for one word are collected in
+file order; identical rows are ignored, and legacy two-column lines are
+accepted without a label. The file is loaded while meanings or phonetics are
+enabled; restart Fcitx5 after an external updater replaces it.
 
 Translation data is deliberately not bundled in this source repository. The
 maintained local generator combines ECDICT's labelled and general senses with
-strict, explicitly domain-labelled CC-CEDICT reverse matches. Generated data
-must be kept out of Git and retain the source licenses; the combined local
+strict, explicitly domain-labelled CC-CEDICT reverse matches. Phonetics come
+directly from the lexical source; the generator does not maintain a manual
+phonetic supplement. Generated data must be kept out of Git and retain the
+source licenses; the combined local
 dictionary is CC BY-SA 4.0.
