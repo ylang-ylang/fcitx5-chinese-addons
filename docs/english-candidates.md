@@ -79,7 +79,7 @@ families, and inflections:
 [英扩] configuration
 config          (缩·常用)
 cfg             (缩·代码)
-configure       (派生·动)
+configure       (派生·动；音标 /kәn'figә/)
 configurational (派生·形)
 configurations  (复数)
 ```
@@ -141,8 +141,8 @@ ordered English words or short phrases. For example, highlight `测试` and pres
 `;` to show:
 
 ```text
-test       (英译·测试)
-beta       (英译·测试)
+test       (英译·测试；音标 /test/)
+beta       (英译·测试；音标 /'beitә/)
 ```
 
 Space and the normal selection keys choose an English candidate. Press `;` or
@@ -188,6 +188,7 @@ Set:
 ```ini
 EnglishTranslationEnabled=True
 EnglishTranslationMaxMeanings=3
+EnglishPhoneticEnabled=True
 ```
 
 `EnglishTranslationMaxMeanings` accepts 1 through 3. It is a maximum: words
@@ -203,9 +204,9 @@ Then install a UTF-8 tab-separated file at:
 Format:
 
 ```text
-# english<TAB>label<TAB>concise Chinese meanings
-user	n.	用户
-patch	计.	补丁/修补
+# english<TAB>label<TAB>concise Chinese meanings<TAB>optional phonetic
+user	n.	用户	'ju:zә
+patch	计.	补丁/修补	pætʃ
 patch	n.	片/补缀
 patch	v.	补缀/掩饰
 ```
@@ -218,9 +219,12 @@ persistent  (adj. 持久的)
 patch       (计. 补丁/修补；n. 片/补缀；v. 补缀/掩饰)
 ```
 
-Selecting these candidates commits only the English word. The lookup is
-case-insensitive. Repeated rows for one word are collected in file order;
-identical rows are ignored, and legacy two-column lines are accepted without a
+Selecting these candidates commits only the English word. The optional
+phonetic field is shown on the temporary `[英译]` and `[英扩]` semicolon pages;
+it does not add text to the committed candidate. It only needs to appear on one
+row for a word. Lookup is case-insensitive. Repeated rows for one word are
+collected in file order; identical rows are ignored, and legacy two-column
+lines are accepted without a
 label. The file is loaded only while meanings are enabled; restart Fcitx5 after
 an external updater replaces it.
 

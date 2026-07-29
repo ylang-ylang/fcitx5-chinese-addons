@@ -91,11 +91,19 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
 
         std::string label;
         std::string translation;
+        std::string phonetic;
         if (secondSeparator == std::string_view::npos) {
             translation = trim(value);
         } else {
             label = trim(value.substr(0, secondSeparator));
-            translation = trim(value.substr(secondSeparator + 1));
+            value.remove_prefix(secondSeparator + 1);
+            const auto thirdSeparator = value.find('\t');
+            if (thirdSeparator == std::string_view::npos) {
+                translation = trim(value);
+            } else {
+                translation = trim(value.substr(0, thirdSeparator));
+                phonetic = trim(value.substr(thirdSeparator + 1));
+            }
         }
         if (word.empty() || translation.empty()) {
             continue;
@@ -106,6 +114,9 @@ bool EnglishTranslationDictionary::load(std::istream &input) {
             continue;
         }
         auto &entry = translations_[std::move(normalized)];
+        if (entry.phonetic.empty() && !phonetic.empty()) {
+            entry.phonetic = std::move(phonetic);
+        }
         const auto duplicate =
             std::ranges::any_of(entry.meanings, [&](const auto &meaning) {
                 return meaning.label == label &&

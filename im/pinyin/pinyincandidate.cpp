@@ -131,6 +131,25 @@ bool isSinglePinyin(const libime::PinyinContext &context, size_t idx) {
     return totalSize == 2;
 }
 
+std::string temporaryEnglishComment(std::string_view label,
+                                    std::string_view phonetic) {
+    if (label.empty() && phonetic.empty()) {
+        return {};
+    }
+    std::string result = "(";
+    result += label;
+    if (!phonetic.empty()) {
+        if (!label.empty()) {
+            result += "；";
+        }
+        result += "音标 /";
+        result += phonetic;
+        result += "/";
+    }
+    result += ")";
+    return result;
+}
+
 } // namespace
 
 PinyinPredictCandidateWord::PinyinPredictCandidateWord(PinyinEngine *engine,
@@ -309,11 +328,11 @@ void SpellCandidateWord::select(InputContext *inputContext) const {
 
 EnglishExpansionCandidateWord::EnglishExpansionCandidateWord(
     PinyinEngine *engine, std::string word, std::string label,
-    size_t selectLength, bool fromPhrase)
+    std::string phonetic, size_t selectLength, bool fromPhrase)
     : engine_(engine), word_(std::move(word)), selectLength_(selectLength),
       fromPhrase_(fromPhrase) {
     setText(Text(word_));
-    setComment(Text(std::format("({})", label)));
+    setComment(Text(temporaryEnglishComment(label, phonetic)));
 }
 
 void EnglishExpansionCandidateWord::select(InputContext *inputContext) const {
@@ -350,10 +369,11 @@ void EnglishPhraseCompletionCandidateWord::select(
 
 ChineseEnglishCandidateWord::ChineseEnglishCandidateWord(
     PinyinEngine *engine, std::string word, std::string sourceChinese,
-    size_t selectLength)
+    std::string phonetic, size_t selectLength)
     : engine_(engine), word_(std::move(word)), selectLength_(selectLength) {
     setText(Text(word_));
-    setComment(Text(std::format("(英译·{})", sourceChinese)));
+    setComment(Text(temporaryEnglishComment(
+        std::format("英译·{}", sourceChinese), phonetic)));
 }
 
 void ChineseEnglishCandidateWord::select(InputContext *inputContext) const {

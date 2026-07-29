@@ -24,6 +24,7 @@ struct EnglishTranslationMeaning {
 
 struct EnglishTranslationEntry {
     std::vector<EnglishTranslationMeaning> meanings;
+    std::string phonetic;
 
     std::string comment(size_t maximumMeanings) const;
 };
@@ -34,10 +35,12 @@ struct EnglishTranslationEntry {
  * The file format is deliberately plain text so that applications can update
  * the data independently from the pinyin addon:
  *
- *     english<TAB>label<TAB>concise Chinese meaning
+ *     english<TAB>label<TAB>concise Chinese meaning<TAB>phonetic
  *
- * A word may occur on up to several consecutive lines, ordered from the most
- * useful meaning to the least useful one. Legacy two-column lines are accepted
+ * The phonetic field is optional and only needs to occur on one row for a
+ * word. A word may occur on up to several consecutive lines, ordered from the
+ * most useful meaning to the least useful one. Legacy two-column lines are
+ * accepted
  * without a label. Empty lines and lines beginning with '#' are ignored. The
  * dictionary is intentionally word-only; sentence translation is outside the
  * scope of the candidate list.

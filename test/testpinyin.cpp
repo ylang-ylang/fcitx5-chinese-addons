@@ -489,6 +489,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         config.setValueByPath("FuzzyEnglishMinLength", "4");
         config.setValueByPath("FuzzyEnglishPromote", "True");
         config.setValueByPath("EnglishExpansionEnabled", "True");
+        config.setValueByPath("EnglishPhoneticEnabled", "True");
         config.setValueByPath("EnglishExpansionMaxCandidates", "10");
         config.setValueByPath("EnglishExpansionTrigger", "semicolon");
         config.setValueByPath("EnglishPhraseEnabled", "True");
@@ -510,7 +511,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
                          ->toBulk()
                          ->candidateFromAll(0)
                          .comment()
-                         .toString() == "(缩·常用)");
+                         .toString() == "(缩·常用；音标 /kən'fɪg/)");
 
         // The trigger toggles back without modifying the English source.
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
@@ -586,6 +587,7 @@ void testOnDemandChineseEnglish(Instance *instance) {
 
         RawConfig config;
         config.setValueByPath("ChineseEnglishEnabled", "True");
+        config.setValueByPath("EnglishPhoneticEnabled", "True");
         config.setValueByPath("ChineseEnglishMaxCandidates", "5");
         config.setValueByPath("ChineseEnglishTrigger", "semicolon");
         config.setValueByPath("QuickPhraseKey", "grave");
@@ -605,7 +607,7 @@ void testOnDemandChineseEnglish(Instance *instance) {
                          ->toBulk()
                          ->candidateFromAll(0)
                          .comment()
-                         .toString() == "(英译·测试)");
+                         .toString() == "(英译·测试；音标 /test/)");
 
         // The trigger toggles back and restores the highlighted source.
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
