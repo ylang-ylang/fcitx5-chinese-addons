@@ -1914,8 +1914,7 @@ bool PinyinEngine::handleEnglishPhrase(
 
 bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     auto *state = inputContext->propertyFor(&factory_);
-    if (!*config_.englishExpansionEnabled || englishExpansions_.empty() ||
-        state->predictWords_) {
+    if (!*config_.englishExpansionEnabled || state->predictWords_) {
         return false;
     }
 
@@ -1953,7 +1952,8 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     }
 
     const auto *expansions = englishExpansions_.lookup(source);
-    if (!expansions || expansions->empty()) {
+    const auto sourcePhonetic = englishPhonetic(source);
+    if ((!expansions || expansions->empty()) && sourcePhonetic.empty()) {
         return false;
     }
 
@@ -1961,14 +1961,18 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     candidates->setPageSize(*config_.pageSize);
     candidates->setCursorPositionAfterPaging(
         CursorPositionAfterPaging::ResetToFirst);
-    const auto maximum =
-        std::min(expansions->size(),
-                 static_cast<size_t>(*config_.englishExpansionMaxCandidates));
-    for (size_t index = 0; index < maximum; index++) {
+    if (expansions && !expansions->empty()) {
+        const auto maximum = std::min(
+            expansions->size(),
+            static_cast<size_t>(*config_.englishExpansionMaxCandidates));
+        for (size_t index = 0; index < maximum; index++) {
+            candidates->append<EnglishExpansionCandidateWord>(
+                this, (*expansions)[index].value, (*expansions)[index].label,
+                selectLength, fromPhrase);
+        }
+    } else {
         candidates->append<EnglishExpansionCandidateWord>(
-            this, (*expansions)[index].value, (*expansions)[index].label,
-            englishPhonetic((*expansions)[index].value), selectLength,
-            fromPhrase);
+            this, source, "原词", selectLength, fromPhrase);
     }
     candidates->setSelectionKey(selectionKeys_);
     candidates->setGlobalCursorIndex(0);
@@ -1977,8 +1981,10 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     state->englishExpansionFromPhrase_ = fromPhrase;
     state->englishExpansionSource_ = source;
     state->englishExpansionSourceIndex_ = sourceIndex;
-    inputContext->inputPanel().setAuxDown(
-        Text(std::format("[英扩] {}", source)));
+    inputContext->inputPanel().setAuxDown(Text(
+        sourcePhonetic.empty()
+            ? std::format("[英扩] {}", source)
+            : std::format("[英扩] {}　音标 /{}/", source, sourcePhonetic)));
     inputContext->inputPanel().setCandidateList(std::move(candidates));
     inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
     return true;
@@ -2137,10 +2143,9 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
         std::min(translationMatch.candidates->size(),
                  static_cast<size_t>(*config_.chineseEnglishMaxCandidates));
     for (size_t index = 0; index < maximum; index++) {
-        const auto &english = (*translationMatch.candidates)[index];
         englishCandidates->append<ChineseEnglishCandidateWord>(
-            this, english, translationMatch.matchedChinese,
-            englishPhonetic(english), pinyinCandidate->selectLength());
+            this, (*translationMatch.candidates)[index],
+            translationMatch.matchedChinese, pinyinCandidate->selectLength());
     }
     englishCandidates->setSelectionKey(selectionKeys_);
     englishCandidates->setGlobalCursorIndex(0);

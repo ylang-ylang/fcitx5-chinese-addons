@@ -511,7 +511,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
                          ->toBulk()
                          ->candidateFromAll(0)
                          .comment()
-                         .toString() == "(缩·常用；音标 /kən'fɪg/)");
+                         .toString() == "(缩·常用)");
 
         // The trigger toggles back without modifying the English source.
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
@@ -520,6 +520,23 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         testfrontend->call<ITestFrontend::pushCommitExpectation>("config");
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
         FCITX_ASSERT(ic->inputPanel().preedit().empty());
+
+        // A selected English word with a phonetic remains queryable even when
+        // it has no abbreviation, derivation, or inflection entry.
+        type("persistent");
+        selectCandidateCursor("persistent");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
+                     "[英扩] persistent　音标 /pəˈsɪstənt/");
+        FCITX_ASSERT(findCandidateOrDie(ic, "persistent") == 0);
+        FCITX_ASSERT(ic->inputPanel()
+                         .candidateList()
+                         ->toBulk()
+                         ->candidateFromAll(0)
+                         .comment()
+                         .toString() == "(原词)");
+        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("Escape"), false);
+        ic->reset();
 
         type("decide");
         selectCandidateCursor("decide");
@@ -607,7 +624,7 @@ void testOnDemandChineseEnglish(Instance *instance) {
                          ->toBulk()
                          ->candidateFromAll(0)
                          .comment()
-                         .toString() == "(英译·测试；音标 /test/)");
+                         .toString() == "(英译·测试)");
 
         // The trigger toggles back and restores the highlighted source.
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
