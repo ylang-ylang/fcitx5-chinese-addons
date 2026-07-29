@@ -50,12 +50,41 @@ jobs:
           cp .github/scripts/prepare-upstream-sync.sh /tmp/prepare-upstream-sync
           bash /tmp/prepare-upstream-sync
 
-  clang-format:
-    name: Check candidate clang-format
+  upstream-format:
+    name: Check upstream clang-format
     permissions:
       contents: read
     needs: prepare
     if: needs.prepare.outputs.state == 'ready'
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    outputs:
+      passed: ${{ steps.check.outcome == 'success' }}
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm git clang diffutils
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/checkout@v4
+        with:
+          repository: fcitx/fcitx5-chinese-addons
+          ref: ${{ needs.prepare.outputs.upstream_sha }}
+      # An upstream formatting failure is a controlled block, not a failure of
+      # the downstream patch queue. Preserve the outcome as a job output while
+      # keeping the workflow successful so scheduled runs do not send failure
+      # notifications for a problem already present in the official branch.
+      - id: check
+        continue-on-error: true
+        uses: fcitx/github-actions@clang-format
+
+  clang-format:
+    name: Check candidate clang-format
+    permissions:
+      contents: read
+    needs: [prepare, upstream-format]
+    if: >-
+      needs.prepare.outputs.state == 'ready' &&
+      needs.upstream-format.outputs.passed == 'true'
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -72,8 +101,10 @@ jobs:
     name: Test candidate (${{ matrix.compiler }})
     permissions:
       contents: read
-    needs: [prepare, clang-format]
-    if: needs.prepare.outputs.state == 'ready'
+    needs: [prepare, upstream-format, clang-format]
+    if: >-
+      needs.prepare.outputs.state == 'ready' &&
+      needs.upstream-format.outputs.passed == 'true'
     runs-on: ubuntu-latest
     container: archlinux:latest
     strategy:
@@ -158,9 +189,10 @@ jobs:
       actions: write
       contents: write
       issues: write
-    needs: [prepare, clang-format, test]
+    needs: [prepare, upstream-format, clang-format, test]
     if: >-
       needs.prepare.outputs.state == 'ready' &&
+      needs.upstream-format.outputs.passed == 'true' &&
       needs.clang-format.result == 'success' &&
       needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -220,12 +252,13 @@ jobs:
     permissions:
       contents: read
       issues: write
-    needs: [prepare, clang-format, test, promote]
+    needs: [prepare, upstream-format, clang-format, test, promote]
     if: >-
       ${{ always() && (
         needs.prepare.result != 'success' ||
         needs.prepare.outputs.state == 'conflict' ||
         (needs.prepare.outputs.state == 'ready' && (
+          needs.upstream-format.outputs.passed != 'true' ||
           needs.clang-format.result != 'success' ||
           needs.test.result != 'success' ||
           needs.promote.result != 'success'
@@ -238,11 +271,28 @@ jobs:
       BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
       UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
       PREPARE_RESULT: ${{ needs.prepare.result }}
+      UPSTREAM_FORMAT_RESULT: ${{ needs.upstream-format.outputs.passed }}
       FORMAT_RESULT: ${{ needs.clang-format.result }}
       TEST_RESULT: ${{ needs.test.result }}
       PROMOTE_RESULT: ${{ needs.promote.result }}
     steps:
+      - name: Summarize an upstream validation block
+        if: >-
+          env.SYNC_STATE == 'ready' &&
+          env.UPSTREAM_FORMAT_RESULT != 'true'
+        run: |
+          {
+            echo "## Upstream sync paused"
+            echo "- Upstream: \`$UPSTREAM_SHA\`"
+            echo "- Upstream clang-format: failed"
+            echo "- Downstream formatting, builds, tests, and promotion: skipped"
+            echo
+            echo "The failure is already present in the official upstream branch."
+          } >>"$GITHUB_STEP_SUMMARY"
       - name: Create or update the sync issue
+        if: >-
+          env.SYNC_STATE != 'ready' ||
+          env.UPSTREAM_FORMAT_RESULT == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -256,7 +306,8 @@ jobs:
               `- Upstream head: \`${process.env.UPSTREAM_SHA || "unknown"}\``,
               `- Conflicts: \`${process.env.CONFLICT_FILES || "none reported"}\``,
               `- Prepare: \`${process.env.PREPARE_RESULT}\``,
-              `- Format: \`${process.env.FORMAT_RESULT}\``,
+              `- Upstream format: \`${process.env.UPSTREAM_FORMAT_RESULT || "not checked"}\``,
+              `- Candidate format: \`${process.env.FORMAT_RESULT}\``,
               `- Tests: \`${process.env.TEST_RESULT}\``,
               `- Promotion: \`${process.env.PROMOTE_RESULT}\``,
               "",
