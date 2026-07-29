@@ -201,6 +201,9 @@ FCITX_CONFIGURATION(
     Option<int, IntConstrain> englishTranslationMaxMeanings{
         this, "EnglishTranslationMaxMeanings",
         _("Maximum English meaning groups"), 3, IntConstrain(1, 3)};
+    Option<bool> englishPhoneticEnabled{
+        this, "EnglishPhoneticEnabled",
+        _("Show phonetics in on-demand English candidate pages"), true};
     Option<bool> englishExpansionEnabled{
         this, "EnglishExpansionEnabled",
         _("Enable on-demand English word and phrase expansions"), false};
@@ -592,6 +595,14 @@ private:
         const auto *entry = englishTranslations_.lookup(word);
         return entry ? entry->comment(*config_.englishTranslationMaxMeanings)
                      : std::string();
+    }
+
+    std::string englishPhonetic(std::string_view word) const {
+        if (!*config_.englishPhoneticEnabled) {
+            return {};
+        }
+        const auto *entry = englishTranslations_.lookup(word);
+        return entry ? entry->phonetic : std::string();
     }
 
     void populateConfig();

@@ -202,8 +202,8 @@ private:
 class EnglishExpansionCandidateWord : public CandidateWord {
 public:
     EnglishExpansionCandidateWord(PinyinEngine *engine, std::string word,
-                                  std::string label, size_t selectLength,
-                                  bool fromPhrase);
+                                  std::string label, std::string phonetic,
+                                  size_t selectLength, bool fromPhrase);
 
     void select(InputContext *inputContext) const override;
 
@@ -242,7 +242,8 @@ private:
 class ChineseEnglishCandidateWord : public CandidateWord {
 public:
     ChineseEnglishCandidateWord(PinyinEngine *engine, std::string word,
-                                std::string sourceChinese, size_t selectLength);
+                                std::string sourceChinese, std::string phonetic,
+                                size_t selectLength);
 
     void select(InputContext *inputContext) const override;
 

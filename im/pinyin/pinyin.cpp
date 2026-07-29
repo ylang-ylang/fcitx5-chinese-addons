@@ -1282,7 +1282,8 @@ void PinyinEngine::loadCustomPhrase() {
 
 void PinyinEngine::loadEnglishTranslations() {
     englishTranslations_.clear();
-    if (!*config_.englishTranslationEnabled) {
+    if (!*config_.englishTranslationEnabled &&
+        !*config_.englishPhoneticEnabled) {
         return;
     }
 
@@ -2062,7 +2063,8 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     for (size_t index = 0; index < maximum; index++) {
         candidates->append<EnglishExpansionCandidateWord>(
             this, (*expansions)[index].value, (*expansions)[index].label,
-            selectLength, fromPhrase);
+            englishPhonetic((*expansions)[index].value), selectLength,
+            fromPhrase);
     }
     candidates->setSelectionKey(selectionKeys_);
     candidates->setGlobalCursorIndex(0);
@@ -2231,9 +2233,10 @@ bool PinyinEngine::showChineseEnglishCandidates(InputContext *inputContext) {
         std::min(translationMatch.candidates->size(),
                  static_cast<size_t>(*config_.chineseEnglishMaxCandidates));
     for (size_t index = 0; index < maximum; index++) {
+        const auto &english = (*translationMatch.candidates)[index];
         englishCandidates->append<ChineseEnglishCandidateWord>(
-            this, (*translationMatch.candidates)[index],
-            translationMatch.matchedChinese, pinyinCandidate->selectLength());
+            this, english, translationMatch.matchedChinese,
+            englishPhonetic(english), pinyinCandidate->selectLength());
     }
     englishCandidates->setSelectionKey(selectionKeys_);
     englishCandidates->setGlobalCursorIndex(0);
