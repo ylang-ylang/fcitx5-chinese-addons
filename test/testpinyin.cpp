@@ -527,7 +527,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         selectCandidateCursor("persistent");
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
         FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
-                     "[英扩] persistent　音标 /pəˈsɪstənt/");
+                     "[英扩] persistent　/pəˈsɪstənt/");
         FCITX_ASSERT(findCandidateOrDie(ic, "persistent") == 0);
         FCITX_ASSERT(ic->inputPanel()
                          .candidateList()

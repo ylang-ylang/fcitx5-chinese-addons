@@ -90,7 +90,7 @@ not every expansion candidate. For example, a word without lexical expansions
 can still open a minimal page when its dictionary entry has a phonetic:
 
 ```text
-[英扩] persistent　音标 /pəˈsɪstənt/
+[英扩] persistent　/pəˈsɪstənt/
 persistent      (原词)
 ```
 
