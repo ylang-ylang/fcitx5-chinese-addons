@@ -502,8 +502,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         type("configuration");
         selectCandidateCursor("configuration");
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
-        FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
-                     "[英扩] configuration");
+        FCITX_ASSERT(ic->inputPanel().auxDown().toString() == "configuration");
         FCITX_ASSERT(findCandidateOrDie(ic, "config") == 0);
         FCITX_ASSERT(findCandidateOrDie(ic, "cfg") == 1);
         FCITX_ASSERT(ic->inputPanel()
@@ -527,7 +526,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         selectCandidateCursor("persistent");
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
         FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
-                     "[英扩] persistent　/pəˈsɪstənt/");
+                     "persistent　/pəˈsɪstənt/");
         FCITX_ASSERT(findCandidateOrDie(ic, "persistent") == 0);
         FCITX_ASSERT(ic->inputPanel()
                          .candidateList()
@@ -552,7 +551,7 @@ void testEnglishExpansionAndPhrase(Instance *instance) {
         beginAsSoonAsPossible();
         testfrontend->call<ITestFrontend::keyEvent>(uuid, Key(";"), false);
         FCITX_ASSERT(ic->inputPanel().auxDown().toString() ==
-                     "[英扩] as soon as possible");
+                     "as soon as possible");
         FCITX_ASSERT(findCandidateOrDie(ic, "ASAP") == 0);
         FCITX_ASSERT(ic->inputPanel()
                          .candidateList()
