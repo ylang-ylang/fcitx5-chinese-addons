@@ -2077,10 +2077,10 @@ bool PinyinEngine::showEnglishExpansionCandidates(InputContext *inputContext) {
     state->englishExpansionFromPhrase_ = fromPhrase;
     state->englishExpansionSource_ = source;
     state->englishExpansionSourceIndex_ = sourceIndex;
-    inputContext->inputPanel().setAuxDown(Text(
-        sourcePhonetic.empty()
-            ? std::format("[英扩] {}", source)
-            : std::format("[英扩] {}　音标 /{}/", source, sourcePhonetic)));
+    inputContext->inputPanel().setAuxDown(
+        Text(sourcePhonetic.empty()
+                 ? std::format("[英扩] {}", source)
+                 : std::format("[英扩] {}　/{}/", source, sourcePhonetic)));
     inputContext->inputPanel().setCandidateList(std::move(candidates));
     inputContext->updateUserInterface(UserInterfaceComponent::InputPanel);
     return true;
