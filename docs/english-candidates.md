@@ -77,7 +77,7 @@ candidates may include conventional abbreviations, cross-part-of-speech
 families, and inflections:
 
 ```text
-[英扩] configuration
+configuration
 config          (缩·常用)
 cfg             (缩·代码)
 configure       (派生·动)
@@ -90,7 +90,7 @@ not every expansion candidate. For example, a word without lexical expansions
 can still open a minimal page when its dictionary entry has a phonetic:
 
 ```text
-[英扩] persistent　/pəˈsɪstənt/
+persistent　/pəˈsɪstənt/
 persistent      (原词)
 ```
 
@@ -231,7 +231,7 @@ patch       (计. 补丁/修补；n. 片/补缀；v. 补缀/掩饰)
 ```
 
 Selecting these candidates commits only the English word. The optional
-phonetic field is shown once in the temporary `[英扩]` page title for the
+phonetic field is shown once in the temporary expansion page title for the
 selected source word; it is not repeated beside every expansion and does not
 add text to the committed candidate. It only needs to appear on one row for a
 word. Lookup is case-insensitive. Repeated rows for one word are collected in
