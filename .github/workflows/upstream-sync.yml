@@ -25,6 +25,7 @@ jobs:
     name: Replay downstream patches
     permissions:
       contents: write
+      workflows: write  # downstream commits may modify .github/workflows/*.yml
     runs-on: ubuntu-latest
     outputs:
       state: ${{ steps.sync.outputs.state }}
