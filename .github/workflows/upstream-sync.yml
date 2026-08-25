@@ -25,7 +25,10 @@ jobs:
     name: Replay downstream patches
     permissions:
       contents: write
-      workflows: write  # downstream commits may modify .github/workflows/*.yml
+      # NOTE: GITHUB_TOKEN cannot push .github/workflows/* changes.
+      # A PAT with the `workflow` scope is required. Set it as a repo secret
+      # named WORKFLOW_PAT; if absent the sync will fail with a clear error
+      # when downstream commits touch workflow files.
     runs-on: ubuntu-latest
     outputs:
       state: ${{ steps.sync.outputs.state }}
@@ -39,6 +42,11 @@ jobs:
         with:
           ref: feature/english-fuzzy-translation
           fetch-depth: 0
+          # GITHUB_TOKEN cannot push .github/workflows/* changes. A PAT with
+          # the `workflow` scope is required. Set WORKFLOW_PAT as a repo secret;
+          # if absent, sync fails with a clear error when downstream commits
+          # touch workflow files.
+          token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
       - name: Prepare candidate branch
         id: sync
         env:
@@ -202,6 +210,7 @@ jobs:
         with:
           ref: feature/english-fuzzy-translation
           fetch-depth: 0
+          token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
       - name: Atomically update the downstream branch
         env:
           TARGET_BRANCH: feature/english-fuzzy-translation
